@@ -3,11 +3,12 @@
 export CGO_ENABLED=0
 
 IMAGE=skpr/fpm-adapter-metrics
+VERSION=$(shell git describe --tags --always)
 
 # Builds the project.
 build:
-	docker build -f dockerfiles/metrics-adapter.dockerfile -t ${IMAGE}:metrics-adapter-latest .
-	docker build -f dockerfiles/sidecar.dockerfile -t ${IMAGE}:sidecar-latest .
+	docker build -f dockerfiles/metrics-adapter.dockerfile -t ${IMAGE}:metrics-adapter-${VERSION} .
+	docker build -f dockerfiles/sidecar.dockerfile -t ${IMAGE}:sidecar-${VERSION} .
 
 # Run all lint checking with exit codes for CI.
 lint:
@@ -16,5 +17,9 @@ lint:
 # Run tests with coverage reporting.
 test:
 	go test -cover ./...
+
+release:
+	docker push ${IMAGE}:metrics-adapter-${VERSION}
+	docker push ${IMAGE}:sidecar-${VERSION}
 
 .PHONY: *
