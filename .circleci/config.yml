@@ -1,0 +1,27 @@
+version: 2
+
+workflows:
+  version: 2
+  test:
+    jobs:
+      - lint
+      - test
+
+jobs:
+  lint:
+    docker:
+      - image: golang:1.12
+    working_directory: /go/src/github.com/skpr/fpm-metrics-adapter
+    steps:
+      - checkout
+      - run: |
+          go get golang.org/x/lint/golint
+          make lint
+
+  test:
+    docker:
+      - image: golang:1.12
+    working_directory: /go/src/github.com/skpr/fpm-metrics-adapter
+    steps:
+      - checkout
+      - run: make test

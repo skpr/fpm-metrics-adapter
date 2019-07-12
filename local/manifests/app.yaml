@@ -1,0 +1,138 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: test
+spec:
+  ports:
+    - port: 8080
+      nodePort: 30080
+  selector:
+    app: nginx
+  type: NodePort
+---  
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: test
+spec:
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: app
+          image: skpr/nginx:1.x
+          ports:
+            - name: http
+              containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: php-fpm
+  namespace: test
+spec:
+  type: ClusterIP
+  ports:
+  - name: fpm
+    port: 9000
+    protocol: TCP
+    targetPort: 9000
+  selector:
+    app: php
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: php
+  namespace: test
+spec:
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: php
+    spec:
+      containers:
+        - name: php
+          image: skpr/php-fpm:7.3-1.x
+          ports:
+            - name: fpm
+              containerPort: 9000
+          volumeMounts:
+            - name: appcode
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 100m
+              memory: 256Mi
+          env:
+            - name:  PHP_FPM_MAX_CHILDREN
+              value: "20"
+            - name:  PHP_FPM_START_SERVERS
+              value: "10"
+            - name:  PHP_FPM_MIN_SPARE_SERVERS
+              value: "5"
+            - name:  PHP_FPM_MAX_SPARE_SERVERS
+              value: "10"
+            - name:  PHP_FPM_MAX_REQUESTS
+              value: "500"
+        - name: sidecar
+          image: golang:1.12
+          command: ["/bin/bash", "-c"]
+          args:
+            - go run cmd/sidecar/main.go
+          workingDir: /go/src/github.com/skpr/metrics-adapter
+          ports:
+          - containerPort: 80
+            name: http
+          volumeMounts:
+            - name: code
+              mountPath: /go/src/github.com/skpr/metrics-adapter
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 100m
+              memory: 256Mi
+      volumes:
+        - name: appcode
+          hostPath:
+            path: /code/local
+        - name: code
+          hostPath:
+            path: /code
+---
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: php
+  namespace: test
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: php
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Pods
+    pods:
+      metric:
+        name: phpfpm_active_processes
+      target:
+        type: AverageValue
+        averageValue: 16
