@@ -55,7 +55,7 @@ spec:
         command: ["/bin/bash", "-c"]
         args:
           - go run cmd/metrics-adapter/main.go --secure-port=6443 --logtostderr=true --v=10
-        workingDir: /go/src/github.com/skpr/metrics-adapter
+        workingDir: /go/src/github.com/skpr/fpm-metrics-adapter
         ports:
         - containerPort: 6443
           name: https
@@ -65,7 +65,7 @@ spec:
           - mountPath: /tmp
             name: temp-vol
           - name: code
-            mountPath: /go/src/github.com/skpr/metrics-adapter
+            mountPath: /go/src/github.com/skpr/fpm-metrics-adapter
       volumes:
         - name: temp-vol
           emptyDir: {}
