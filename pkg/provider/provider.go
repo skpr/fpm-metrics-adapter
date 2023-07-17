@@ -1,14 +1,14 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/kubernetes-incubator/custom-metrics-apiserver/pkg/provider"
-	"github.com/kubernetes-incubator/custom-metrics-apiserver/pkg/provider/helpers"
+	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -20,9 +20,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/metrics/pkg/apis/custom_metrics"
+	"sigs.k8s.io/custom-metrics-apiserver/pkg/provider"
+	"sigs.k8s.io/custom-metrics-apiserver/pkg/provider/helpers"
 
 	"github.com/skpr/fpm-metrics-adapter/pkg/fpm"
-	"github.com/skpr/fpm-metrics-adapter/pkg/log"
 )
 
 const (
@@ -68,9 +69,7 @@ func New(client dynamic.Interface, config *rest.Config, mapper apimeta.RESTMappe
 }
 
 // GetMetricByName returns a single metric by name.
-func (p *Provider) GetMetricByName(name types.NamespacedName, info provider.CustomMetricInfo, metricSelector labels.Selector) (*custom_metrics.MetricValue, error) {
-	logger := log.New("GetMetricByName").With("namespace", name.Namespace)
-
+func (p *Provider) GetMetricByName(ctx context.Context, name types.NamespacedName, info provider.CustomMetricInfo, metricSelector labels.Selector) (*custom_metrics.MetricValue, error) {
 	ref, err := helpers.ReferenceFor(p.mapper, name, info)
 	if err != nil {
 		return nil, err
@@ -81,7 +80,7 @@ func (p *Provider) GetMetricByName(name types.NamespacedName, info provider.Cust
 		return nil, err
 	}
 
-	metric, err := scrape(clientset, ref.Namespace, ref.Name, info.Metric)
+	metric, err := scrape(ctx, clientset, ref.Namespace, ref.Name, info.Metric)
 	if err != nil {
 		return nil, err
 	}
@@ -95,16 +94,12 @@ func (p *Provider) GetMetricByName(name types.NamespacedName, info provider.Cust
 		Value:     *resource.NewQuantity(metric, resource.DecimalExponent),
 	}
 
-	logger.With(name.Name, value.Value.String()).Infoln(value)
-
 	return value, nil
 }
 
 // GetMetricBySelector returns a set of metrics queried by selector.
 // https://github.com/kubernetes-incubator/custom-metrics-apiserver/blob/master/test-adapter/provider/provider.go#L234
-func (p *Provider) GetMetricBySelector(namespace string, selector labels.Selector, info provider.CustomMetricInfo, metricSelector labels.Selector) (*custom_metrics.MetricValueList, error) {
-	logger := log.New("GetMetricBySelector").With("namespace", namespace)
-
+func (p *Provider) GetMetricBySelector(ctx context.Context, namespace string, selector labels.Selector, info provider.CustomMetricInfo, metricSelector labels.Selector) (*custom_metrics.MetricValueList, error) {
 	names, err := helpers.ListObjectNames(p.mapper, p.client, namespace, selector, info)
 	if err != nil {
 		return nil, err
@@ -118,13 +113,11 @@ func (p *Provider) GetMetricBySelector(namespace string, selector labels.Selecto
 			Namespace: namespace,
 		}
 
-		metric, err := p.GetMetricByName(n, info, metricSelector)
+		metric, err := p.GetMetricByName(ctx, n, info, metricSelector)
 		if err != nil {
-			logger.Error(err)
+			log.Error(err)
 			continue
 		}
-
-		logger = logger.With(name, metric.Value.String())
 
 		items = append(items, *metric)
 	}
@@ -132,8 +125,6 @@ func (p *Provider) GetMetricBySelector(namespace string, selector labels.Selecto
 	list := &custom_metrics.MetricValueList{
 		Items: items,
 	}
-
-	logger.Infoln("Successful response")
 
 	return list, nil
 }
@@ -150,10 +141,10 @@ func (p *Provider) ListAllMetrics() []provider.CustomMetricInfo {
 }
 
 // Scrape the context of the PHP-FPM exporter.
-func scrape(clientset *kubernetes.Clientset, namespace, name, metric string) (int64, error) {
+func scrape(ctx context.Context, clientset *kubernetes.Clientset, namespace, name, metric string) (int64, error) {
 	var status fpm.Status
 
-	pod, err := clientset.CoreV1().Pods(namespace).Get(name, metav1.GetOptions{})
+	pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return 0, err
 	}

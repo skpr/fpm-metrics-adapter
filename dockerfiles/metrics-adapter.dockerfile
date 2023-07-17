@@ -1,4 +1,4 @@
-FROM golang:1.12 as builder
+FROM golang:1.19 as builder
 WORKDIR /go/src/github.com/skpr/fpm-metrics-adapter
 COPY pkg/    pkg/
 COPY cmd/    cmd/

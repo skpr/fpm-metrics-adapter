@@ -18,21 +18,28 @@ package etcd3
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 
-	apierrs "k8s.io/apimachinery/pkg/api/errors"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/apiserver/pkg/storage"
+	"k8s.io/apiserver/pkg/storage/etcd3/metrics"
 	"k8s.io/apiserver/pkg/storage/value"
+	utilflowcontrol "k8s.io/apiserver/pkg/util/flowcontrol"
 
-	"github.com/coreos/etcd/clientv3"
-	"k8s.io/klog"
+	clientv3 "go.etcd.io/etcd/client/v3"
+
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -44,34 +51,34 @@ const (
 // fatalOnDecodeError is used during testing to panic the server if watcher encounters a decoding error
 var fatalOnDecodeError = false
 
-// errTestingDecode is the only error that testingDeferOnDecodeError catches during a panic
-var errTestingDecode = errors.New("sentinel error only used during testing to indicate watch decoding error")
-
-// testingDeferOnDecodeError is used during testing to recover from a panic caused by errTestingDecode, all other values continue to panic
-func testingDeferOnDecodeError() {
-	if r := recover(); r != nil && r != errTestingDecode {
-		panic(r)
-	}
-}
-
 func init() {
 	// check to see if we are running in a test environment
+	TestOnlySetFatalOnDecodeError(true)
 	fatalOnDecodeError, _ = strconv.ParseBool(os.Getenv("KUBE_PANIC_WATCH_DECODE_ERROR"))
 }
 
+// TestOnlySetFatalOnDecodeError should only be used for cases where decode errors are expected and need to be tested. e.g. conversion webhooks.
+func TestOnlySetFatalOnDecodeError(b bool) {
+	fatalOnDecodeError = b
+}
+
 type watcher struct {
-	client      *clientv3.Client
-	codec       runtime.Codec
-	versioner   storage.Versioner
-	transformer value.Transformer
+	client        *clientv3.Client
+	codec         runtime.Codec
+	newFunc       func() runtime.Object
+	objectType    string
+	groupResource schema.GroupResource
+	versioner     storage.Versioner
 }
 
 // watchChan implements watch.Interface.
 type watchChan struct {
 	watcher           *watcher
+	transformer       value.Transformer
 	key               string
 	initialRev        int64
 	recursive         bool
+	progressNotify    bool
 	internalPred      storage.SelectionPredicate
 	ctx               context.Context
 	cancel            context.CancelFunc
@@ -80,13 +87,20 @@ type watchChan struct {
 	errChan           chan error
 }
 
-func newWatcher(client *clientv3.Client, codec runtime.Codec, versioner storage.Versioner, transformer value.Transformer) *watcher {
-	return &watcher{
-		client:      client,
-		codec:       codec,
-		versioner:   versioner,
-		transformer: transformer,
+func newWatcher(client *clientv3.Client, codec runtime.Codec, groupResource schema.GroupResource, newFunc func() runtime.Object, versioner storage.Versioner) *watcher {
+	res := &watcher{
+		client:        client,
+		codec:         codec,
+		groupResource: groupResource,
+		newFunc:       newFunc,
+		versioner:     versioner,
 	}
+	if newFunc == nil {
+		res.objectType = "<unknown>"
+	} else {
+		res.objectType = reflect.TypeOf(newFunc()).String()
+	}
+	return res
 }
 
 // Watch watches on a key and returns a watch.Interface that transfers relevant notifications.
@@ -96,21 +110,31 @@ func newWatcher(client *clientv3.Client, codec runtime.Codec, versioner storage.
 // If recursive is false, it watches on given key.
 // If recursive is true, it watches any children and directories under the key, excluding the root key itself.
 // pred must be non-nil. Only if pred matches the change, it will be returned.
-func (w *watcher) Watch(ctx context.Context, key string, rev int64, recursive bool, pred storage.SelectionPredicate) (watch.Interface, error) {
+func (w *watcher) Watch(ctx context.Context, key string, rev int64, recursive, progressNotify bool, transformer value.Transformer, pred storage.SelectionPredicate) (watch.Interface, error) {
 	if recursive && !strings.HasSuffix(key, "/") {
 		key += "/"
 	}
-	wc := w.createWatchChan(ctx, key, rev, recursive, pred)
+	wc := w.createWatchChan(ctx, key, rev, recursive, progressNotify, transformer, pred)
 	go wc.run()
+
+	// For etcd watch we don't have an easy way to answer whether the watch
+	// has already caught up. So in the initial version (given that watchcache
+	// is by default enabled for all resources but Events), we just deliver
+	// the initialization signal immediately. Improving this will be explored
+	// in the future.
+	utilflowcontrol.WatchInitialized(ctx)
+
 	return wc, nil
 }
 
-func (w *watcher) createWatchChan(ctx context.Context, key string, rev int64, recursive bool, pred storage.SelectionPredicate) *watchChan {
+func (w *watcher) createWatchChan(ctx context.Context, key string, rev int64, recursive, progressNotify bool, transformer value.Transformer, pred storage.SelectionPredicate) *watchChan {
 	wc := &watchChan{
 		watcher:           w,
+		transformer:       transformer,
 		key:               key,
 		initialRev:        rev,
 		recursive:         recursive,
+		progressNotify:    progressNotify,
 		internalPred:      pred,
 		incomingEventChan: make(chan *event, incomingBufSize),
 		resultChan:        make(chan watch.Event, outgoingBufSize),
@@ -120,8 +144,41 @@ func (w *watcher) createWatchChan(ctx context.Context, key string, rev int64, re
 		// The filter doesn't filter out any object.
 		wc.internalPred = storage.Everything
 	}
-	wc.ctx, wc.cancel = context.WithCancel(ctx)
+
+	// The etcd server waits until it cannot find a leader for 3 election
+	// timeouts to cancel existing streams. 3 is currently a hard coded
+	// constant. The election timeout defaults to 1000ms. If the cluster is
+	// healthy, when the leader is stopped, the leadership transfer should be
+	// smooth. (leader transfers its leadership before stopping). If leader is
+	// hard killed, other servers will take an election timeout to realize
+	// leader lost and start campaign.
+	wc.ctx, wc.cancel = context.WithCancel(clientv3.WithRequireLeader(ctx))
 	return wc
+}
+
+type etcdError interface {
+	Code() grpccodes.Code
+	Error() string
+}
+
+type grpcError interface {
+	GRPCStatus() *grpcstatus.Status
+}
+
+func isCancelError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if err == context.Canceled {
+		return true
+	}
+	if etcdErr, ok := err.(etcdError); ok && etcdErr.Code() == grpccodes.Canceled {
+		return true
+	}
+	if grpcErr, ok := err.(grpcError); ok && grpcErr.GRPCStatus().Code() == grpccodes.Canceled {
+		return true
+	}
+	return false
 }
 
 func (wc *watchChan) run() {
@@ -134,7 +191,7 @@ func (wc *watchChan) run() {
 
 	select {
 	case err := <-wc.errChan:
-		if err == context.Canceled {
+		if isCancelError(err) {
 			break
 		}
 		errResult := transformErrorToEvent(err)
@@ -185,6 +242,18 @@ func (wc *watchChan) sync() error {
 	return nil
 }
 
+func logWatchChannelErr(err error) {
+	switch {
+	case strings.Contains(err.Error(), "mvcc: required revision has been compacted"):
+		// mvcc revision compaction which is regarded as warning, not error
+		klog.Warningf("watch chan error: %v", err)
+	case isCancelError(err):
+		// expected when watches close, no need to log
+	default:
+		klog.Errorf("watch chan error: %v", err)
+	}
+}
+
 // startWatching does:
 // - get current objects if initialRev=0; set initialRev to current rev
 // - watch on given key and send events to process.
@@ -200,19 +269,29 @@ func (wc *watchChan) startWatching(watchClosedCh chan struct{}) {
 	if wc.recursive {
 		opts = append(opts, clientv3.WithPrefix())
 	}
+	if wc.progressNotify {
+		opts = append(opts, clientv3.WithProgressNotify())
+	}
 	wch := wc.watcher.client.Watch(wc.ctx, wc.key, opts...)
 	for wres := range wch {
 		if wres.Err() != nil {
 			err := wres.Err()
 			// If there is an error on server (e.g. compaction), the channel will return it before closed.
-			klog.Errorf("watch chan error: %v", err)
+			logWatchChannelErr(err)
 			wc.sendError(err)
 			return
 		}
+		if wres.IsProgressNotify() {
+			wc.sendEvent(progressNotifyEvent(wres.Header.GetRevision()))
+			metrics.RecordEtcdBookmark(wc.watcher.groupResource.String())
+			continue
+		}
+
 		for _, e := range wres.Events {
+			metrics.RecordEtcdEvent(wc.watcher.groupResource.String())
 			parsedEvent, err := parseEvent(e)
 			if err != nil {
-				klog.Errorf("watch chan error: %v", err)
+				logWatchChannelErr(err)
 				wc.sendError(err)
 				return
 			}
@@ -238,8 +317,7 @@ func (wc *watchChan) processEvent(wg *sync.WaitGroup) {
 				continue
 			}
 			if len(wc.resultChan) == outgoingBufSize {
-				klog.V(3).Infof("Fast watcher, slow processing. Number of buffered events: %d."+
-					"Probably caused by slow dispatching events to watchers", outgoingBufSize)
+				klog.V(3).InfoS("Fast watcher, slow processing. Probably caused by slow dispatching events to watchers", "outgoingEvents", outgoingBufSize, "objectType", wc.watcher.objectType, "groupResource", wc.watcher.groupResource)
 			}
 			// If user couldn't receive results fast enough, we also block incoming events from watcher.
 			// Because storing events in local will cause more memory usage.
@@ -277,6 +355,19 @@ func (wc *watchChan) transform(e *event) (res *watch.Event) {
 	}
 
 	switch {
+	case e.isProgressNotify:
+		if wc.watcher.newFunc == nil {
+			return nil
+		}
+		object := wc.watcher.newFunc()
+		if err := wc.watcher.versioner.UpdateObject(object, uint64(e.rev)); err != nil {
+			klog.Errorf("failed to propagate object version: %v", err)
+			return nil
+		}
+		res = &watch.Event{
+			Type:   watch.Bookmark,
+			Object: object,
+		}
 	case e.isDeleted:
 		if !wc.filter(oldObj) {
 			return nil
@@ -326,10 +417,10 @@ func (wc *watchChan) transform(e *event) (res *watch.Event) {
 
 func transformErrorToEvent(err error) *watch.Event {
 	err = interpretWatchError(err)
-	if _, ok := err.(apierrs.APIStatus); !ok {
-		err = apierrs.NewInternalError(err)
+	if _, ok := err.(apierrors.APIStatus); !ok {
+		err = apierrors.NewInternalError(err)
 	}
-	status := err.(apierrs.APIStatus).Status()
+	status := err.(apierrors.APIStatus).Status()
 	return &watch.Event{
 		Type:   watch.Error,
 		Object: &status,
@@ -345,9 +436,7 @@ func (wc *watchChan) sendError(err error) {
 
 func (wc *watchChan) sendEvent(e *event) {
 	if len(wc.incomingEventChan) == incomingBufSize {
-		klog.V(3).Infof("Fast watcher, slow processing. Number of buffered events: %d."+
-			"Probably caused by slow decoding, user not receiving fast, or other processing logic",
-			incomingBufSize)
+		klog.V(3).InfoS("Fast watcher, slow processing. Probably caused by slow decoding, user not receiving fast, or other processing logic", "incomingEvents", incomingBufSize, "objectType", wc.watcher.objectType, "groupResource", wc.watcher.groupResource)
 	}
 	select {
 	case wc.incomingEventChan <- e:
@@ -356,8 +445,13 @@ func (wc *watchChan) sendEvent(e *event) {
 }
 
 func (wc *watchChan) prepareObjs(e *event) (curObj runtime.Object, oldObj runtime.Object, err error) {
+	if e.isProgressNotify {
+		// progressNotify events doesn't contain neither current nor previous object version,
+		return nil, nil, nil
+	}
+
 	if !e.isDeleted {
-		data, _, err := wc.watcher.transformer.TransformFromStorage(e.value, authenticatedDataString(e.key))
+		data, _, err := wc.transformer.TransformFromStorage(wc.ctx, e.value, authenticatedDataString(e.key))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -372,7 +466,7 @@ func (wc *watchChan) prepareObjs(e *event) (curObj runtime.Object, oldObj runtim
 	// we need the object only to compute whether it was filtered out
 	// before).
 	if len(e.prevValue) > 0 && (e.isDeleted || !wc.acceptAll()) {
-		data, _, err := wc.watcher.transformer.TransformFromStorage(e.prevValue, authenticatedDataString(e.key))
+		data, _, err := wc.transformer.TransformFromStorage(wc.ctx, e.prevValue, authenticatedDataString(e.key))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -390,9 +484,6 @@ func decodeObj(codec runtime.Codec, versioner storage.Versioner, data []byte, re
 	obj, err := runtime.Decode(codec, []byte(data))
 	if err != nil {
 		if fatalOnDecodeError {
-			// catch watch decode error iff we caused it on
-			// purpose during a unit test
-			defer testingDeferOnDecodeError()
 			// we are running in a test environment and thus an
 			// error here is due to a coder mistake if the defer
 			// does not catch it
