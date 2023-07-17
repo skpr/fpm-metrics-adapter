@@ -19,78 +19,86 @@ package configuration
 import (
 	"fmt"
 	"sort"
-	"sync/atomic"
 
-	"k8s.io/api/admissionregistration/v1beta1"
+	"k8s.io/api/admissionregistration/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apiserver/pkg/admission/plugin/webhook"
 	"k8s.io/apiserver/pkg/admission/plugin/webhook/generic"
 	"k8s.io/client-go/informers"
-	admissionregistrationlisters "k8s.io/client-go/listers/admissionregistration/v1beta1"
+	admissionregistrationlisters "k8s.io/client-go/listers/admissionregistration/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/cache/synctrack"
 )
 
 // mutatingWebhookConfigurationManager collects the mutating webhook objects so that they can be called.
 type mutatingWebhookConfigurationManager struct {
-	configuration *atomic.Value
-	lister        admissionregistrationlisters.MutatingWebhookConfigurationLister
-	hasSynced     func() bool
+	lister    admissionregistrationlisters.MutatingWebhookConfigurationLister
+	hasSynced func() bool
+	lazy      synctrack.Lazy[[]webhook.WebhookAccessor]
 }
 
 var _ generic.Source = &mutatingWebhookConfigurationManager{}
 
 func NewMutatingWebhookConfigurationManager(f informers.SharedInformerFactory) generic.Source {
-	informer := f.Admissionregistration().V1beta1().MutatingWebhookConfigurations()
+	informer := f.Admissionregistration().V1().MutatingWebhookConfigurations()
 	manager := &mutatingWebhookConfigurationManager{
-		configuration: &atomic.Value{},
-		lister:        informer.Lister(),
-		hasSynced:     informer.Informer().HasSynced,
+		lister: informer.Lister(),
 	}
+	manager.lazy.Evaluate = manager.getConfiguration
 
-	// Start with an empty list
-	manager.configuration.Store(&v1beta1.MutatingWebhookConfiguration{})
-
-	// On any change, rebuild the config
-	informer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(_ interface{}) { manager.updateConfiguration() },
-		UpdateFunc: func(_, _ interface{}) { manager.updateConfiguration() },
-		DeleteFunc: func(_ interface{}) { manager.updateConfiguration() },
+	handle, _ := informer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(_ interface{}) { manager.lazy.Notify() },
+		UpdateFunc: func(_, _ interface{}) { manager.lazy.Notify() },
+		DeleteFunc: func(_ interface{}) { manager.lazy.Notify() },
 	})
+	manager.hasSynced = handle.HasSynced
 
 	return manager
 }
 
 // Webhooks returns the merged MutatingWebhookConfiguration.
-func (m *mutatingWebhookConfigurationManager) Webhooks() []v1beta1.Webhook {
-	return m.configuration.Load().(*v1beta1.MutatingWebhookConfiguration).Webhooks
+func (m *mutatingWebhookConfigurationManager) Webhooks() []webhook.WebhookAccessor {
+	out, err := m.lazy.Get()
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("error getting webhook configuration: %v", err))
+	}
+	return out
 }
 
-func (m *mutatingWebhookConfigurationManager) HasSynced() bool {
-	return m.hasSynced()
-}
+// HasSynced returns true if the initial set of mutating webhook configurations
+// has been loaded.
+func (m *mutatingWebhookConfigurationManager) HasSynced() bool { return m.hasSynced() }
 
-func (m *mutatingWebhookConfigurationManager) updateConfiguration() {
+func (m *mutatingWebhookConfigurationManager) getConfiguration() ([]webhook.WebhookAccessor, error) {
 	configurations, err := m.lister.List(labels.Everything())
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("error updating configuration: %v", err))
-		return
+		return []webhook.WebhookAccessor{}, err
 	}
-	m.configuration.Store(mergeMutatingWebhookConfigurations(configurations))
+	return mergeMutatingWebhookConfigurations(configurations), nil
 }
 
-func mergeMutatingWebhookConfigurations(configurations []*v1beta1.MutatingWebhookConfiguration) *v1beta1.MutatingWebhookConfiguration {
-	var ret v1beta1.MutatingWebhookConfiguration
+func mergeMutatingWebhookConfigurations(configurations []*v1.MutatingWebhookConfiguration) []webhook.WebhookAccessor {
 	// The internal order of webhooks for each configuration is provided by the user
 	// but configurations themselves can be in any order. As we are going to run these
 	// webhooks in serial, they are sorted here to have a deterministic order.
 	sort.SliceStable(configurations, MutatingWebhookConfigurationSorter(configurations).ByName)
+	accessors := []webhook.WebhookAccessor{}
 	for _, c := range configurations {
-		ret.Webhooks = append(ret.Webhooks, c.Webhooks...)
+		// webhook names are not validated for uniqueness, so we check for duplicates and
+		// add a int suffix to distinguish between them
+		names := map[string]int{}
+		for i := range c.Webhooks {
+			n := c.Webhooks[i].Name
+			uid := fmt.Sprintf("%s/%s/%d", c.Name, n, names[n])
+			names[n]++
+			accessors = append(accessors, webhook.NewMutatingWebhookAccessor(uid, c.Name, &c.Webhooks[i]))
+		}
 	}
-	return &ret
+	return accessors
 }
 
-type MutatingWebhookConfigurationSorter []*v1beta1.MutatingWebhookConfiguration
+type MutatingWebhookConfigurationSorter []*v1.MutatingWebhookConfiguration
 
 func (a MutatingWebhookConfigurationSorter) ByName(i, j int) bool {
 	return a[i].Name < a[j].Name

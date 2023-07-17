@@ -36,7 +36,7 @@ func ValidateWebhookURL(fldPath *field.Path, URL string, forceHttps bool) field.
 			allErrors = append(allErrors, field.Invalid(fldPath, u.Scheme, "'https' is the only allowed URL scheme"+form))
 		}
 		if len(u.Host) == 0 {
-			allErrors = append(allErrors, field.Invalid(fldPath, u.Host, "host must be provided"+form))
+			allErrors = append(allErrors, field.Invalid(fldPath, u.Host, "host must be specified"+form))
 		}
 		if u.User != nil {
 			allErrors = append(allErrors, field.Invalid(fldPath, u.User.String(), "user information is not permitted in the URL"))
@@ -51,7 +51,7 @@ func ValidateWebhookURL(fldPath *field.Path, URL string, forceHttps bool) field.
 	return allErrors
 }
 
-func ValidateWebhookService(fldPath *field.Path, namespace, name string, path *string) field.ErrorList {
+func ValidateWebhookService(fldPath *field.Path, namespace, name string, path *string, port int32) field.ErrorList {
 	var allErrors field.ErrorList
 
 	if len(name) == 0 {
@@ -60,6 +60,10 @@ func ValidateWebhookService(fldPath *field.Path, namespace, name string, path *s
 
 	if len(namespace) == 0 {
 		allErrors = append(allErrors, field.Required(fldPath.Child("namespace"), "service namespace is required"))
+	}
+
+	if errs := validation.IsValidPortNum(int(port)); errs != nil {
+		allErrors = append(allErrors, field.Invalid(fldPath.Child("port"), port, "port is not valid: "+strings.Join(errs, ", ")))
 	}
 
 	if path == nil {

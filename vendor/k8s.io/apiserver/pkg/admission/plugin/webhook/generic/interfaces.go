@@ -19,27 +19,35 @@ package generic
 import (
 	"context"
 
-	"k8s.io/api/admissionregistration/v1beta1"
-	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/admission"
+	"k8s.io/apiserver/pkg/admission/plugin/webhook"
 )
+
+type VersionedAttributeAccessor interface {
+	VersionedAttribute(gvk schema.GroupVersionKind) (*admission.VersionedAttributes, error)
+}
 
 // Source can list dynamic webhook plugins.
 type Source interface {
-	Webhooks() []v1beta1.Webhook
+	Webhooks() []webhook.WebhookAccessor
 	HasSynced() bool
 }
 
-// VersionedAttributes is a wrapper around the original admission attributes, adding versioned
-// variants of the object and old object.
-type VersionedAttributes struct {
-	admission.Attributes
-	VersionedOldObject runtime.Object
-	VersionedObject    runtime.Object
+// WebhookInvocation describes how to call a webhook, including the resource and subresource the webhook registered for,
+// and the kind that should be sent to the webhook.
+type WebhookInvocation struct {
+	Webhook     webhook.WebhookAccessor
+	Resource    schema.GroupVersionResource
+	Subresource string
+	Kind        schema.GroupVersionKind
 }
 
 // Dispatcher dispatches webhook call to a list of webhooks with admission attributes as argument.
 type Dispatcher interface {
-	// Dispatch a request to the webhooks using the given webhooks. A non-nil error means the request is rejected.
-	Dispatch(ctx context.Context, a *VersionedAttributes, o admission.ObjectInterfaces, hooks []*v1beta1.Webhook) error
+	// Dispatch a request to the webhooks. Dispatcher may choose not to
+	// call a hook, either because the rules of the hook does not match, or
+	// the namespaceSelector or the objectSelector of the hook does not
+	// match. A non-nil error means the request is rejected.
+	Dispatch(ctx context.Context, a admission.Attributes, o admission.ObjectInterfaces, hooks []webhook.WebhookAccessor) error
 }

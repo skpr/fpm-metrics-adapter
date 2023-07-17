@@ -1,0 +1,41 @@
+project_name: skpr-fpm-metrics-adapter
+
+builds:
+  - id: metrics-adapter
+    main: ./cmd/metrics-adapter
+    binary: metrics-adapter
+    ldflags:
+      - -extldflags '-static'
+    env:
+      - CGO_ENABLED=0
+    goos: [ linux ]
+    goarch: [ amd64 ]
+
+  - id: sidecar
+    main: ./cmd/sidecar
+    binary: sidecar
+    ldflags:
+      - -extldflags '-static'
+    env:
+      - CGO_ENABLED=0
+    goos: [ linux ]
+    goarch: [ amd64 ]
+
+dockers:
+  - ids: [ metrics-adapter ]
+    image_templates:
+      - docker.io/skpr/fpm-metrics-adapter:apiserver-{{ .Commit }}
+      - docker.io/skpr/fpm-metrics-adapter:apiserver-{{ .Tag }}
+      - docker.io/skpr/fpm-metrics-adapter:apiserver-latest
+    dockerfile: dockerfiles/metrics-adapter/Dockerfile
+    build_flag_templates:
+      - "--pull"
+
+  - ids: [ sidecar ]
+    image_templates:
+      - docker.io/skpr/fpm-metrics-adapter:sidecar-{{ .Commit }}
+      - docker.io/skpr/fpm-metrics-adapter:sidecar-{{ .Tag }}
+      - docker.io/skpr/fpm-metrics-adapter:sidecar-latest
+    dockerfile: dockerfiles/sidecar/Dockerfile
+    build_flag_templates:
+      - "--pull"

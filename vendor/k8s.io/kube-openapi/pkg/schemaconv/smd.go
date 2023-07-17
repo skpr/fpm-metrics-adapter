@@ -17,32 +17,20 @@ limitations under the License.
 package schemaconv
 
 import (
-	"errors"
 	"fmt"
-	"path"
-	"strings"
+	"sort"
 
-	"k8s.io/kube-openapi/pkg/util/proto"
-	"sigs.k8s.io/structured-merge-diff/schema"
+	"sigs.k8s.io/structured-merge-diff/v4/schema"
 )
 
-// ToSchema converts openapi definitions into a schema suitable for structured
-// merge (i.e. kubectl apply v2).
-func ToSchema(models proto.Models) (*schema.Schema, error) {
-	c := convert{
-		input:  models,
-		output: &schema.Schema{},
-	}
-	if err := c.convertAll(); err != nil {
-		return nil, err
-	}
-
-	return c.output, nil
-}
+const (
+	quantityResource     = "io.k8s.apimachinery.pkg.api.resource.Quantity"
+	rawExtensionResource = "io.k8s.apimachinery.pkg.runtime.RawExtension"
+)
 
 type convert struct {
-	input  proto.Models
-	output *schema.Schema
+	preserveUnknownFields bool
+	output                *schema.Schema
 
 	currentName   string
 	current       *schema.Atom
@@ -51,10 +39,10 @@ type convert struct {
 
 func (c *convert) push(name string, a *schema.Atom) *convert {
 	return &convert{
-		input:       c.input,
-		output:      c.output,
-		currentName: name,
-		current:     a,
+		preserveUnknownFields: c.preserveUnknownFields,
+		output:                c.output,
+		currentName:           name,
+		current:               a,
 	}
 }
 
@@ -64,30 +52,17 @@ func (c *convert) pop(c2 *convert) {
 	c.errorMessages = append(c.errorMessages, c2.errorMessages...)
 }
 
-func (c *convert) convertAll() error {
-	for _, name := range c.input.ListModels() {
-		model := c.input.LookupModel(name)
-		c.insertTypeDef(name, model)
-	}
-	if len(c.errorMessages) > 0 {
-		return errors.New(strings.Join(c.errorMessages, "\n"))
-	}
-	return nil
-}
-
 func (c *convert) reportError(format string, args ...interface{}) {
 	c.errorMessages = append(c.errorMessages,
 		c.currentName+": "+fmt.Sprintf(format, args...),
 	)
 }
 
-func (c *convert) insertTypeDef(name string, model proto.Schema) {
+func (c *convert) insertTypeDef(name string, atom schema.Atom) {
 	def := schema.TypeDef{
 		Name: name,
+		Atom: atom,
 	}
-	c2 := c.push(name, &def.Atom)
-	model.Accept(c2)
-	c.pop(c2)
 	if def.Atom == (schema.Atom{}) {
 		// This could happen if there were a top-level reference.
 		return
@@ -95,46 +70,154 @@ func (c *convert) insertTypeDef(name string, model proto.Schema) {
 	c.output.Types = append(c.output.Types, def)
 }
 
-func (c *convert) makeRef(model proto.Schema) schema.TypeRef {
-	var tr schema.TypeRef
-	if r, ok := model.(*proto.Ref); ok {
-		if r.Reference() == "io.k8s.apimachinery.pkg.runtime.RawExtension" {
-			return schema.TypeRef{
-				Inlined: schema.Atom{
-					Untyped: &schema.Untyped{},
-				},
-			}
-		}
-		// reference a named type
-		_, n := path.Split(r.Reference())
-		tr.NamedType = &n
-	} else {
-		// compute the type inline
-		c2 := c.push("inlined in "+c.currentName, &tr.Inlined)
-		model.Accept(c2)
-		c.pop(c2)
-
-		if tr == (schema.TypeRef{}) {
-			// emit warning?
-			tr.Inlined.Untyped = &schema.Untyped{}
-		}
-	}
-	return tr
+func (c *convert) addCommonTypes() {
+	c.output.Types = append(c.output.Types, untypedDef)
+	c.output.Types = append(c.output.Types, deducedDef)
 }
 
-func (c *convert) VisitKind(k *proto.Kind) {
-	a := c.top()
-	a.Struct = &schema.Struct{}
-	for _, name := range k.FieldOrder {
-		member := k.Fields[name]
-		tr := c.makeRef(member)
-		a.Struct.Fields = append(a.Struct.Fields, schema.StructField{
-			Name: name,
-			Type: tr,
-		})
+var untypedName string = "__untyped_atomic_"
+
+var untypedDef schema.TypeDef = schema.TypeDef{
+	Name: untypedName,
+	Atom: schema.Atom{
+		Scalar: ptr(schema.Scalar("untyped")),
+		List: &schema.List{
+			ElementType: schema.TypeRef{
+				NamedType: &untypedName,
+			},
+			ElementRelationship: schema.Atomic,
+		},
+		Map: &schema.Map{
+			ElementType: schema.TypeRef{
+				NamedType: &untypedName,
+			},
+			ElementRelationship: schema.Atomic,
+		},
+	},
+}
+
+var deducedName string = "__untyped_deduced_"
+
+var deducedDef schema.TypeDef = schema.TypeDef{
+	Name: deducedName,
+	Atom: schema.Atom{
+		Scalar: ptr(schema.Scalar("untyped")),
+		List: &schema.List{
+			ElementType: schema.TypeRef{
+				NamedType: &untypedName,
+			},
+			ElementRelationship: schema.Atomic,
+		},
+		Map: &schema.Map{
+			ElementType: schema.TypeRef{
+				NamedType: &deducedName,
+			},
+			ElementRelationship: schema.Separable,
+		},
+	},
+}
+
+func makeUnions(extensions map[string]interface{}) ([]schema.Union, error) {
+	schemaUnions := []schema.Union{}
+	if iunions, ok := extensions["x-kubernetes-unions"]; ok {
+		unions, ok := iunions.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf(`"x-kubernetes-unions" should be a list, got %#v`, unions)
+		}
+		for _, iunion := range unions {
+			union, ok := iunion.(map[interface{}]interface{})
+			if !ok {
+				return nil, fmt.Errorf(`"x-kubernetes-unions" items should be a map of string to unions, got %#v`, iunion)
+			}
+			unionMap := map[string]interface{}{}
+			for k, v := range union {
+				key, ok := k.(string)
+				if !ok {
+					return nil, fmt.Errorf(`"x-kubernetes-unions" has non-string key: %#v`, k)
+				}
+				unionMap[key] = v
+			}
+			schemaUnion, err := makeUnion(unionMap)
+			if err != nil {
+				return nil, err
+			}
+			schemaUnions = append(schemaUnions, schemaUnion)
+		}
 	}
 
-	// TODO: Get element relationship when we start adding it to the spec.
+	// Make sure we have no overlap between unions
+	fs := map[string]struct{}{}
+	for _, u := range schemaUnions {
+		if u.Discriminator != nil {
+			if _, ok := fs[*u.Discriminator]; ok {
+				return nil, fmt.Errorf("%v field appears multiple times in unions", *u.Discriminator)
+			}
+			fs[*u.Discriminator] = struct{}{}
+		}
+		for _, f := range u.Fields {
+			if _, ok := fs[f.FieldName]; ok {
+				return nil, fmt.Errorf("%v field appears multiple times in unions", f.FieldName)
+			}
+			fs[f.FieldName] = struct{}{}
+		}
+	}
+
+	return schemaUnions, nil
+}
+
+func makeUnion(extensions map[string]interface{}) (schema.Union, error) {
+	union := schema.Union{
+		Fields: []schema.UnionField{},
+	}
+
+	if idiscriminator, ok := extensions["discriminator"]; ok {
+		discriminator, ok := idiscriminator.(string)
+		if !ok {
+			return schema.Union{}, fmt.Errorf(`"discriminator" must be a string, got: %#v`, idiscriminator)
+		}
+		union.Discriminator = &discriminator
+	}
+
+	if ifields, ok := extensions["fields-to-discriminateBy"]; ok {
+		fields, ok := ifields.(map[interface{}]interface{})
+		if !ok {
+			return schema.Union{}, fmt.Errorf(`"fields-to-discriminateBy" must be a map[string]string, got: %#v`, ifields)
+		}
+		// Needs sorted keys by field.
+		keys := []string{}
+		for ifield := range fields {
+			field, ok := ifield.(string)
+			if !ok {
+				return schema.Union{}, fmt.Errorf(`"fields-to-discriminateBy": field must be a string, got: %#v`, ifield)
+			}
+			keys = append(keys, field)
+
+		}
+		sort.Strings(keys)
+		reverseMap := map[string]struct{}{}
+		for _, field := range keys {
+			value := fields[field]
+			discriminated, ok := value.(string)
+			if !ok {
+				return schema.Union{}, fmt.Errorf(`"fields-to-discriminateBy"/%v: value must be a string, got: %#v`, field, value)
+			}
+			union.Fields = append(union.Fields, schema.UnionField{
+				FieldName:          field,
+				DiscriminatorValue: discriminated,
+			})
+
+			// Check that we don't have the same discriminateBy multiple times.
+			if _, ok := reverseMap[discriminated]; ok {
+				return schema.Union{}, fmt.Errorf("Multiple fields have the same discriminated name: %v", discriminated)
+			}
+			reverseMap[discriminated] = struct{}{}
+		}
+	}
+
+	if union.Discriminator != nil && len(union.Fields) == 0 {
+		return schema.Union{}, fmt.Errorf("discriminator set to %v, but no fields in union", *union.Discriminator)
+	}
+	return union, nil
 }
 
 func toStringSlice(o interface{}) (out []string, ok bool) {
@@ -147,103 +230,108 @@ func toStringSlice(o interface{}) (out []string, ok bool) {
 			}
 		}
 		return out, true
+	case []string:
+		return t, true
 	}
 	return nil, false
 }
 
-func (c *convert) VisitArray(a *proto.Array) {
-	atom := c.top()
-	atom.List = &schema.List{
-		ElementRelationship: schema.Atomic,
-	}
-	l := atom.List
-	l.ElementType = c.makeRef(a.SubType)
+func ptr(s schema.Scalar) *schema.Scalar { return &s }
 
-	ext := a.GetExtensions()
-
-	if val, ok := ext["x-kubernetes-list-type"]; ok {
-		if val == "atomic" {
-			l.ElementRelationship = schema.Atomic
-		} else if val == "set" {
-			l.ElementRelationship = schema.Associative
-		} else if val == "map" {
-			l.ElementRelationship = schema.Associative
-			if keys, ok := ext["x-kubernetes-list-map-keys"]; ok {
-				if keyNames, ok := toStringSlice(keys); ok {
-					l.Keys = keyNames
-				} else {
-					c.reportError("uninterpreted map keys: %#v", keys)
-				}
-			} else {
-				c.reportError("missing map keys")
-			}
-		} else {
-			c.reportError("unknown list type %v", val)
-			l.ElementRelationship = schema.Atomic
-		}
-	} else if val, ok := ext["x-kubernetes-patch-strategy"]; ok {
-		if val == "merge" || val == "merge,retainKeys" {
-			l.ElementRelationship = schema.Associative
-			if key, ok := ext["x-kubernetes-patch-merge-key"]; ok {
-				if keyName, ok := key.(string); ok {
-					l.Keys = []string{keyName}
-				} else {
-					c.reportError("uninterpreted merge key: %#v", key)
-				}
-			} else {
-				// It's not an error for this to be absent, it
-				// means it's a set.
-			}
-		} else if val == "retainKeys" {
-		} else {
-			c.reportError("unknown patch strategy %v", val)
-			l.ElementRelationship = schema.Atomic
-		}
-	}
-}
-
-func (c *convert) VisitMap(m *proto.Map) {
-	a := c.top()
-	a.Map = &schema.Map{}
-	a.Map.ElementType = c.makeRef(m.SubType)
-
-	// TODO: Get element relationship when we start putting it into the
-	// spec.
-}
-
-func (c *convert) VisitPrimitive(p *proto.Primitive) {
-	a := c.top()
-	ptr := func(s schema.Scalar) *schema.Scalar { return &s }
-	switch p.Type {
-	case proto.Integer:
+// Basic conversion functions to convert OpenAPI schema definitions to
+// SMD Schema atoms
+func convertPrimitive(typ string, format string) (a schema.Atom) {
+	switch typ {
+	case "integer":
 		a.Scalar = ptr(schema.Numeric)
-	case proto.Number:
+	case "number":
 		a.Scalar = ptr(schema.Numeric)
-	case proto.String:
-		switch p.Format {
+	case "string":
+		switch format {
 		case "":
 			a.Scalar = ptr(schema.String)
 		case "byte":
 			// byte really means []byte and is encoded as a string.
 			a.Scalar = ptr(schema.String)
 		case "int-or-string":
-			a.Untyped = &schema.Untyped{}
+			a.Scalar = ptr(schema.Scalar("untyped"))
 		case "date-time":
-			a.Untyped = &schema.Untyped{}
+			a.Scalar = ptr(schema.Scalar("untyped"))
 		default:
-			a.Untyped = &schema.Untyped{}
+			a.Scalar = ptr(schema.Scalar("untyped"))
 		}
-	case proto.Boolean:
+	case "boolean":
 		a.Scalar = ptr(schema.Boolean)
 	default:
-		a.Untyped = &schema.Untyped{}
+		a.Scalar = ptr(schema.Scalar("untyped"))
 	}
+
+	return a
 }
 
-func (c *convert) VisitArbitrary(a *proto.Arbitrary) {
-	c.top().Untyped = &schema.Untyped{}
+func getListElementRelationship(ext map[string]any) (schema.ElementRelationship, []string, error) {
+	if val, ok := ext["x-kubernetes-list-type"]; ok {
+		switch val {
+		case "atomic":
+			return schema.Atomic, nil, nil
+		case "set":
+			return schema.Associative, nil, nil
+		case "map":
+			keys, ok := ext["x-kubernetes-list-map-keys"]
+
+			if !ok {
+				return schema.Associative, nil, fmt.Errorf("missing map keys")
+			}
+
+			keyNames, ok := toStringSlice(keys)
+			if !ok {
+				return schema.Associative, nil, fmt.Errorf("uninterpreted map keys: %#v", keys)
+			}
+
+			return schema.Associative, keyNames, nil
+		default:
+			return schema.Atomic, nil, fmt.Errorf("unknown list type %v", val)
+		}
+	} else if val, ok := ext["x-kubernetes-patch-strategy"]; ok {
+		switch val {
+		case "merge", "merge,retainKeys":
+			if key, ok := ext["x-kubernetes-patch-merge-key"]; ok {
+				keyName, ok := key.(string)
+
+				if !ok {
+					return schema.Associative, nil, fmt.Errorf("uninterpreted merge key: %#v", key)
+				}
+
+				return schema.Associative, []string{keyName}, nil
+			}
+			// It's not an error for x-kubernetes-patch-merge-key to be absent,
+			// it means it's a set
+			return schema.Associative, nil, nil
+		case "retainKeys":
+			return schema.Atomic, nil, nil
+		default:
+			return schema.Atomic, nil, fmt.Errorf("unknown patch strategy %v", val)
+		}
+	}
+
+	// Treat as atomic by default
+	return schema.Atomic, nil, nil
 }
 
-func (c *convert) VisitReference(proto.Reference) {
-	// Do nothing, we handle references specially
+// Returns map element relationship if specified, or empty string if unspecified
+func getMapElementRelationship(ext map[string]any) (schema.ElementRelationship, error) {
+	val, ok := ext["x-kubernetes-map-type"]
+	if !ok {
+		// unset Map element relationship
+		return "", nil
+	}
+
+	switch val {
+	case "atomic":
+		return schema.Atomic, nil
+	case "granular":
+		return schema.Separable, nil
+	default:
+		return "", fmt.Errorf("unknown map type %v", val)
+	}
 }
