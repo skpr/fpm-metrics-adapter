@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -25,23 +26,23 @@ type Adapter struct {
 }
 
 // Helper function to instantiate the custom metrics provider.
-func (a *Adapter) makeProviderOrDie() provider.CustomMetricsProvider {
+func (a *Adapter) makeProviderOrDie() (provider.CustomMetricsProvider, error) {
 	config, err := a.ClientConfig()
 	if err != nil {
-		klog.Fatalf("unable to construct client config: %v", err)
+		return nil, fmt.Errorf("unable to construct client config: %w", err)
 	}
 
 	client, err := a.DynamicClient()
 	if err != nil {
-		klog.Fatalf("unable to construct dynamic client: %v", err)
+		return nil, fmt.Errorf("unable to construct dynamic client: %w", err)
 	}
 
 	mapper, err := a.RESTMapper()
 	if err != nil {
-		klog.Fatalf("unable to construct discovery REST mapper: %v", err)
+		return nil, fmt.Errorf("unable to construct discovery REST mapper: %w", err)
 	}
 
-	return customprovider.New(client, config, mapper)
+	return customprovider.New(client, config, mapper), nil
 }
 
 func main() {
@@ -54,14 +55,18 @@ func main() {
 	cmd.Flags().StringVar(&cmd.Message, "msg", "starting adapter...", "startup message")
 	logs.AddFlags(cmd.Flags())
 	if err := cmd.Flags().Parse(os.Args); err != nil {
-		klog.Fatalf("unable to parse flags: %v", err)
+		panic(err)
 	}
 
-	testProvider := cmd.makeProviderOrDie()
+	testProvider, err := cmd.makeProviderOrDie()
+	if err != nil {
+		panic(err)
+	}
+
 	cmd.WithCustomMetrics(testProvider)
 
 	if err := metrics.RegisterMetrics(legacyregistry.Register); err != nil {
-		klog.Fatal("unable to register metrics: %w", err)
+		panic(err)
 	}
 
 	klog.Infof(cmd.Message)
@@ -72,10 +77,13 @@ func main() {
 			Addr:              ":8080",
 			ReadHeaderTimeout: 3 * time.Second,
 		}
-		klog.Fatal(server.ListenAndServe())
+
+		if err := server.ListenAndServe(); err != nil {
+			panic(err)
+		}
 	}()
 
 	if err := cmd.Run(wait.NeverStop); err != nil {
-		klog.Fatalf("unable to run custom metrics adapter: %w", err)
+		panic(err)
 	}
 }
