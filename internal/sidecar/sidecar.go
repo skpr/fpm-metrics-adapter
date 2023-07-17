@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/heptio/workgroup"
 
-	"github.com/skpr/fpm-metrics-adapter/pkg/fpm"
+	"github.com/skpr/fpm-metrics-adapter/internal/fpm"
 )
 
 // Current status cached from the last successful query.

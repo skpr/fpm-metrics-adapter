@@ -13,9 +13,10 @@ import (
 	basecmd "sigs.k8s.io/custom-metrics-apiserver/pkg/cmd"
 	"sigs.k8s.io/custom-metrics-apiserver/pkg/provider"
 
-	customprovider "github.com/skpr/fpm-metrics-adapter/pkg/provider"
+	customprovider "github.com/skpr/fpm-metrics-adapter/internal/provider"
 )
 
+// Adapter for custom metrics.
 type Adapter struct {
 	basecmd.AdapterBase
 
@@ -23,6 +24,7 @@ type Adapter struct {
 	Message string
 }
 
+// Helper function to instantiate the custom metrics provider.
 func (a *Adapter) makeProviderOrDie() provider.CustomMetricsProvider {
 	config, err := a.ClientConfig()
 	if err != nil {

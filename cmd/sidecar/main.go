@@ -3,7 +3,7 @@ package main
 import (
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/skpr/fpm-metrics-adapter/pkg/sidecar"
+	"github.com/skpr/fpm-metrics-adapter/internal/sidecar"
 )
 
 var (

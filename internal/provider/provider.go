@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/custom-metrics-apiserver/pkg/provider"
 	"sigs.k8s.io/custom-metrics-apiserver/pkg/provider/helpers"
 
-	"github.com/skpr/fpm-metrics-adapter/pkg/fpm"
+	"github.com/skpr/fpm-metrics-adapter/internal/fpm"
 )
 
 const (
