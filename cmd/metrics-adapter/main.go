@@ -61,7 +61,7 @@ func main() {
 	cmd.WithCustomMetrics(testProvider)
 
 	if err := metrics.RegisterMetrics(legacyregistry.Register); err != nil {
-		klog.Fatal("unable to register metrics: %v", err)
+		klog.Fatal("unable to register metrics: %w", err)
 	}
 
 	klog.Infof(cmd.Message)
@@ -76,6 +76,6 @@ func main() {
 	}()
 
 	if err := cmd.Run(wait.NeverStop); err != nil {
-		klog.Fatalf("unable to run custom metrics adapter: %v", err)
+		klog.Fatalf("unable to run custom metrics adapter: %w", err)
 	}
 }

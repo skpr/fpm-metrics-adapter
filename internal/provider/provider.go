@@ -90,7 +90,7 @@ func (p *Provider) GetMetricByName(ctx context.Context, name types.NamespacedNam
 		Metric: custom_metrics.MetricIdentifier{
 			Name: info.Metric,
 		},
-		Timestamp: metav1.Time{time.Now()},
+		Timestamp: metav1.Time{Time: time.Now()},
 		Value:     *resource.NewQuantity(metric, resource.DecimalExponent),
 	}
 
