@@ -1,6 +1,6 @@
-FROM alpine:3.17
+FROM alpine:3.20
 
 RUN apk --no-cache add ca-certificates
-COPY metrics-adapter /usr/local/bin/
+COPY skpr-fpm-metrics-adapter /usr/local/bin/
 
-CMD ["metrics-adapter"]
+CMD ["skpr-fpm-metrics-adapter"]
