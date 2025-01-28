@@ -1,0 +1,39 @@
+name: 📋 Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+[0-9A-Za-z]?'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  buildx:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: ⬇️ Git clone the repository
+        uses: actions/checkout@v4
+
+      - name: 🔐 Log in to the Container registry
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📦 Build
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ github.repository }}:apiserver-${{ github.ref_name }} -f dockerfiles/metrics-adapter/Dockerfile .
+          docker build -t ${{ env.REGISTRY }}/${{ github.repository }}:sidecar-${{ github.ref_name }} -f dockerfiles/sidecar/Dockerfile .
+
+      - name: ☁️ Push
+        run: |
+          docker push ${{ env.REGISTRY }}/${{ github.repository }}:apiserver-${{ github.ref_name }}
+          docker push ${{ env.REGISTRY }}/${{ github.repository }}:sidecar-${{ github.ref_name }}

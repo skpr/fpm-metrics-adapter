@@ -1,16 +1,12 @@
+// Package fpm for interacting with the FPM process.
 package fpm
 
 import (
-	"io"
-	"regexp"
-	"strconv"
-
-	"github.com/pkg/errors"
+	"encoding/json"
+	"fmt"
 
 	fcgiclient "github.com/tomasen/fcgi_client"
 )
-
-var queryStatusRegexp = regexp.MustCompile(`(?m)^(.*):\s+(.*)$`)
 
 // QueryStatus of the FPM worker pool.
 func QueryStatus(address string) (Status, error) {
@@ -19,6 +15,7 @@ func QueryStatus(address string) (Status, error) {
 	env := map[string]string{
 		"SCRIPT_FILENAME": "/status",
 		"SCRIPT_NAME":     "/status",
+		"QUERY_STRING":    "json&full",
 	}
 
 	fcgi, err := fcgiclient.Dial("tcp", address)
@@ -35,32 +32,15 @@ func QueryStatus(address string) (Status, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 0 {
-		return status, errors.New("")
+		return status, fmt.Errorf("status code was: %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	var response QueryResponse
+
+	err = json.NewDecoder(resp.Body).Decode(&response)
 	if err != nil {
-		return status, err
+		return status, fmt.Errorf("failed to decode json: %w", err)
 	}
 
-	matches := queryStatusRegexp.FindAllStringSubmatch(string(body), -1)
-
-	for _, match := range matches {
-		key := match[1]
-
-		value, err := strconv.Atoi(match[2])
-		if err != nil {
-			continue
-		}
-
-		if key == "total processes" {
-			status.Processes.Total = int64(value)
-		}
-
-		if key == "active processes" {
-			status.Processes.Active = int64(value)
-		}
-	}
-
-	return status, nil
+	return Status(response), nil
 }

@@ -1,0 +1,39 @@
+name: 📋 Quality Checks
+
+on:
+  pull_request:
+    types: [ synchronize, opened, reopened, ready_for_review ]
+
+jobs:
+  lint:
+    name: 📋 Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Git clone the repository
+        uses: actions/checkout@v3
+
+      - name: 📦 Install Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: '1.21'
+
+      - name: 🧪 Revive
+        run: |
+          go install github.com/mgechev/revive@latest
+          make lint
+
+  test:
+    name: 📋 Test
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Git clone the repository
+        uses: actions/checkout@v3
+
+      - name: 📦 Install Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: '1.21'
+
+      - name: 🧪 Test
+        run: go test ./...

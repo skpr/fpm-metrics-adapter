@@ -1,3 +1,4 @@
+// Package provider for Kubernetes metrics adapter integration.
 package provider
 
 import (
@@ -5,10 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -27,8 +29,18 @@ import (
 )
 
 const (
-	// MetricActiveProcesses provides te number of active processes.
+	// MetricListenQueue provides the number of requests (backlog) currently waiting for a free process.
+	MetricListenQueue = "phpfpm_listen_queue"
+	// MetricListenQueueLen provides the maximum allowed size of the listen queue.
+	MetricListenQueueLen = "phpfpm_listen_queue_len"
+	// MetricIdleProcesses provides the number of processes that are currently idle (waiting for requests).
+	MetricIdleProcesses = "phpfpm_idle_processes"
+	// MetricActiveProcesses provides the number of processes that are currently processing requests.
 	MetricActiveProcesses = "phpfpm_active_processes"
+	// MetricTotalProcesses provides the current total number of processes.
+	MetricTotalProcesses = "phpfpm_total_processes"
+	// MetricMaxActiveProcesses provides the maximum number of concurrently active processes.
+	MetricMaxActiveProcesses = "max_active_processes"
 
 	// AnnotationProtocol is used for configuration which protocol is used for querying metrics.
 	AnnotationProtocol = "fpm.skpr.io/protocol"
@@ -54,25 +66,36 @@ type CustomMetricResource struct {
 
 // Provider is a sample implementation of provider.MetricsProvider which stores a map of fake metrics
 type Provider struct {
+	logger *slog.Logger
 	client dynamic.Interface
 	config *rest.Config
 	mapper apimeta.RESTMapper
+	cache  *cache.Cache
 }
 
 // New returns an instance of Provider, along with its restful.WebService that opens endpoints to post new fake metrics
-func New(client dynamic.Interface, config *rest.Config, mapper apimeta.RESTMapper) provider.CustomMetricsProvider {
+func New(logger *slog.Logger, client dynamic.Interface, config *rest.Config, mapper apimeta.RESTMapper, cacheExpiration time.Duration) provider.CustomMetricsProvider {
 	return &Provider{
+		logger: logger,
 		client: client,
 		config: config,
 		mapper: mapper,
+		cache:  cache.New(cacheExpiration, cacheExpiration),
 	}
 }
 
 // GetMetricByName returns a single metric by name.
-func (p *Provider) GetMetricByName(ctx context.Context, name types.NamespacedName, info provider.CustomMetricInfo, metricSelector labels.Selector) (*custom_metrics.MetricValue, error) {
+func (p *Provider) GetMetricByName(ctx context.Context, name types.NamespacedName, info provider.CustomMetricInfo, _ labels.Selector) (*custom_metrics.MetricValue, error) {
 	ref, err := helpers.ReferenceFor(p.mapper, name, info)
 	if err != nil {
 		return nil, err
+	}
+
+	cacheKey := fmt.Sprintf("%s-%s-%s", ref.Namespace, ref.Name, info.Metric)
+
+	// Check cache to avoid stampedes.
+	if cached, found := p.cache.Get(cacheKey); found {
+		return cached.(*custom_metrics.MetricValue), nil
 	}
 
 	clientset, err := kubernetes.NewForConfig(p.config)
@@ -93,6 +116,9 @@ func (p *Provider) GetMetricByName(ctx context.Context, name types.NamespacedNam
 		Timestamp: metav1.Time{Time: time.Now()},
 		Value:     *resource.NewQuantity(metric, resource.DecimalExponent),
 	}
+
+	// Store this in the cache to avoid stampedes.
+	p.cache.Set(cacheKey, value, cache.DefaultExpiration)
 
 	return value, nil
 }
@@ -115,7 +141,7 @@ func (p *Provider) GetMetricBySelector(ctx context.Context, namespace string, se
 
 		metric, err := p.GetMetricByName(ctx, n, info, metricSelector)
 		if err != nil {
-			log.Error(err)
+			p.logger.Error("failed to get metrics by name", "error", err.Error())
 			continue
 		}
 
@@ -134,7 +160,32 @@ func (p *Provider) ListAllMetrics() []provider.CustomMetricInfo {
 	return []provider.CustomMetricInfo{
 		{
 			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
+			Metric:        MetricListenQueue,
+			Namespaced:    true,
+		},
+		{
+			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
+			Metric:        MetricListenQueueLen,
+			Namespaced:    true,
+		},
+		{
+			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
+			Metric:        MetricIdleProcesses,
+			Namespaced:    true,
+		},
+		{
+			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
 			Metric:        MetricActiveProcesses,
+			Namespaced:    true,
+		},
+		{
+			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
+			Metric:        MetricTotalProcesses,
+			Namespaced:    true,
+		},
+		{
+			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
+			Metric:        MetricMaxActiveProcesses,
 			Namespaced:    true,
 		},
 	}
@@ -165,8 +216,19 @@ func scrape(ctx context.Context, clientset *kubernetes.Clientset, namespace, nam
 		return 0, err
 	}
 
-	if metric == MetricActiveProcesses {
-		return status.Processes.Active, nil
+	switch metric {
+	case MetricListenQueue:
+		return status.ListenQueue, nil
+	case MetricListenQueueLen:
+		return status.ListenQueueLen, nil
+	case MetricIdleProcesses:
+		return status.IdleProcesses, nil
+	case MetricActiveProcesses:
+		return status.ActiveProcesses, nil
+	case MetricTotalProcesses:
+		return status.TotalProcesses, nil
+	case MetricMaxActiveProcesses:
+		return status.MaxActiveProcesses, nil
 	}
 
 	return 0, errors.New("not found")
