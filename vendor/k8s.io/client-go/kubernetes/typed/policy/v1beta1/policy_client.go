@@ -19,10 +19,10 @@ limitations under the License.
 package v1beta1
 
 import (
-	http "net/http"
+	"net/http"
 
-	policyv1beta1 "k8s.io/api/policy/v1beta1"
-	scheme "k8s.io/client-go/kubernetes/scheme"
+	v1beta1 "k8s.io/api/policy/v1beta1"
+	"k8s.io/client-go/kubernetes/scheme"
 	rest "k8s.io/client-go/rest"
 )
 
@@ -30,6 +30,7 @@ type PolicyV1beta1Interface interface {
 	RESTClient() rest.Interface
 	EvictionsGetter
 	PodDisruptionBudgetsGetter
+	PodSecurityPoliciesGetter
 }
 
 // PolicyV1beta1Client is used to interact with features provided by the policy group.
@@ -43,6 +44,10 @@ func (c *PolicyV1beta1Client) Evictions(namespace string) EvictionInterface {
 
 func (c *PolicyV1beta1Client) PodDisruptionBudgets(namespace string) PodDisruptionBudgetInterface {
 	return newPodDisruptionBudgets(c, namespace)
+}
+
+func (c *PolicyV1beta1Client) PodSecurityPolicies() PodSecurityPolicyInterface {
+	return newPodSecurityPolicies(c)
 }
 
 // NewForConfig creates a new PolicyV1beta1Client for the given config.
@@ -90,10 +95,10 @@ func New(c rest.Interface) *PolicyV1beta1Client {
 }
 
 func setConfigDefaults(config *rest.Config) error {
-	gv := policyv1beta1.SchemeGroupVersion
+	gv := v1beta1.SchemeGroupVersion
 	config.GroupVersion = &gv
 	config.APIPath = "/apis"
-	config.NegotiatedSerializer = rest.CodecFactoryForGeneratedClient(scheme.Scheme, scheme.Codecs).WithoutConversion()
+	config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
 
 	if config.UserAgent == "" {
 		config.UserAgent = rest.DefaultKubernetesUserAgent()

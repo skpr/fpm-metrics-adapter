@@ -18,7 +18,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	gpath "path"
@@ -29,7 +28,7 @@ import (
 	systemd "github.com/coreos/go-systemd/v22/daemon"
 
 	"golang.org/x/time/rate"
-	apidiscoveryv2 "k8s.io/api/apidiscovery/v2"
+	apidiscoveryv2beta1 "k8s.io/api/apidiscovery/v2beta1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -60,6 +59,7 @@ import (
 	"k8s.io/kube-openapi/pkg/handler3"
 	openapiutil "k8s.io/kube-openapi/pkg/util"
 	"k8s.io/kube-openapi/pkg/validation/spec"
+	"k8s.io/utils/clock"
 )
 
 // Info about an API group.
@@ -157,7 +157,7 @@ type GenericAPIServer struct {
 	openAPIConfig *openapicommon.Config
 
 	// Enable swagger and/or OpenAPI V3 if these configs are non-nil.
-	openAPIV3Config *openapicommon.OpenAPIV3Config
+	openAPIV3Config *openapicommon.Config
 
 	// SkipOpenAPIInstallation indicates not to install the OpenAPI handler
 	// during PrepareRun.
@@ -190,11 +190,19 @@ type GenericAPIServer struct {
 	preShutdownHooksCalled bool
 
 	// healthz checks
-	healthzRegistry healthCheckRegistry
-	readyzRegistry  healthCheckRegistry
-	livezRegistry   healthCheckRegistry
-
-	livezGracePeriod time.Duration
+	healthzLock            sync.Mutex
+	healthzChecks          []healthz.HealthChecker
+	healthzChecksInstalled bool
+	// livez checks
+	livezLock            sync.Mutex
+	livezChecks          []healthz.HealthChecker
+	livezChecksInstalled bool
+	// readyz checks
+	readyzLock            sync.Mutex
+	readyzChecks          []healthz.HealthChecker
+	readyzChecksInstalled bool
+	livezGracePeriod      time.Duration
+	livezClock            clock.Clock
 
 	// auditing. The backend is started before the server starts listening.
 	AuditBackend audit.Backend
@@ -321,7 +329,7 @@ func (s *GenericAPIServer) PreShutdownHooks() map[string]preShutdownHookEntry {
 	return s.preShutdownHooks
 }
 func (s *GenericAPIServer) HealthzChecks() []healthz.HealthChecker {
-	return s.healthzRegistry.checks
+	return s.healthzChecks
 }
 func (s *GenericAPIServer) ListedPaths() []string {
 	return s.listedPathProvider.ListedPaths()
@@ -421,9 +429,11 @@ func (s *GenericAPIServer) PrepareRun() preparedGenericAPIServer {
 	}
 
 	if s.openAPIV3Config != nil && !s.skipOpenAPIInstallation {
-		s.OpenAPIV3VersionedService = routes.OpenAPI{
-			V3Config: s.openAPIV3Config,
-		}.InstallV3(s.Handler.GoRestfulContainer, s.Handler.NonGoRestfulMux)
+		if utilfeature.DefaultFeatureGate.Enabled(features.OpenAPIV3) {
+			s.OpenAPIV3VersionedService = routes.OpenAPI{
+				Config: s.openAPIV3Config,
+			}.InstallV3(s.Handler.GoRestfulContainer, s.Handler.NonGoRestfulMux)
+		}
 	}
 
 	s.installHealthz()
@@ -726,7 +736,16 @@ func (s preparedGenericAPIServer) NonBlockingRun(stopCh <-chan struct{}, shutdow
 }
 
 // installAPIResources is a private method for installing the REST storage backing each api groupversionresource
-func (s *GenericAPIServer) installAPIResources(apiPrefix string, apiGroupInfo *APIGroupInfo, typeConverter managedfields.TypeConverter) error {
+func (s *GenericAPIServer) installAPIResources(apiPrefix string, apiGroupInfo *APIGroupInfo, openAPIModels map[string]*spec.Schema) error {
+	var typeConverter managedfields.TypeConverter
+
+	if len(openAPIModels) > 0 {
+		var err error
+		typeConverter, err = managedfields.NewTypeConverter(openAPIModels, false)
+		if err != nil {
+			return err
+		}
+	}
 	var resourceInfos []*storageversion.ResourceInfo
 	for _, groupVersion := range apiGroupInfo.PrioritizedVersions {
 		if len(apiGroupInfo.VersionedResourcesStorageMap[groupVersion.Version]) == 0 {
@@ -756,8 +775,8 @@ func (s *GenericAPIServer) installAPIResources(apiPrefix string, apiGroupInfo *A
 			if apiPrefix == APIGroupPrefix {
 				s.AggregatedDiscoveryGroupManager.AddGroupVersion(
 					groupVersion.Group,
-					apidiscoveryv2.APIVersionDiscovery{
-						Freshness: apidiscoveryv2.DiscoveryFreshnessCurrent,
+					apidiscoveryv2beta1.APIVersionDiscovery{
+						Freshness: apidiscoveryv2beta1.DiscoveryFreshnessCurrent,
 						Version:   groupVersion.Version,
 						Resources: discoveryAPIResources,
 					},
@@ -766,8 +785,8 @@ func (s *GenericAPIServer) installAPIResources(apiPrefix string, apiGroupInfo *A
 				// There is only one group version for legacy resources, priority can be defaulted to 0.
 				s.AggregatedLegacyDiscoveryGroupManager.AddGroupVersion(
 					groupVersion.Group,
-					apidiscoveryv2.APIVersionDiscovery{
-						Freshness: apidiscoveryv2.DiscoveryFreshnessCurrent,
+					apidiscoveryv2beta1.APIVersionDiscovery{
+						Freshness: apidiscoveryv2beta1.DiscoveryFreshnessCurrent,
 						Version:   groupVersion.Version,
 						Resources: discoveryAPIResources,
 					},
@@ -825,9 +844,6 @@ func (s *GenericAPIServer) InstallLegacyAPIGroup(apiPrefix string, apiGroupInfo 
 // underlying storage will be destroyed on this servers shutdown.
 func (s *GenericAPIServer) InstallAPIGroups(apiGroupInfos ...*APIGroupInfo) error {
 	for _, apiGroupInfo := range apiGroupInfos {
-		if len(apiGroupInfo.PrioritizedVersions) == 0 {
-			return fmt.Errorf("no version priority set for %#v", *apiGroupInfo)
-		}
 		// Do not register empty group or empty version.  Doing so claims /apis/ for the wrong entity to be returned.
 		// Catching these here places the error  much closer to its origin
 		if len(apiGroupInfo.PrioritizedVersions[0].Group) == 0 {
@@ -900,22 +916,9 @@ func (s *GenericAPIServer) getAPIGroupVersion(apiGroupInfo *APIGroupInfo, groupV
 }
 
 func (s *GenericAPIServer) newAPIGroupVersion(apiGroupInfo *APIGroupInfo, groupVersion schema.GroupVersion) *genericapi.APIGroupVersion {
-
-	allServedVersionsByResource := map[string][]string{}
-	for version, resourcesInVersion := range apiGroupInfo.VersionedResourcesStorageMap {
-		for resource := range resourcesInVersion {
-			if len(groupVersion.Group) == 0 {
-				allServedVersionsByResource[resource] = append(allServedVersionsByResource[resource], version)
-			} else {
-				allServedVersionsByResource[resource] = append(allServedVersionsByResource[resource], fmt.Sprintf("%s/%s", groupVersion.Group, version))
-			}
-		}
-	}
-
 	return &genericapi.APIGroupVersion{
-		GroupVersion:                groupVersion,
-		AllServedVersionsByResource: allServedVersionsByResource,
-		MetaGroupVersion:            apiGroupInfo.MetaGroupVersion,
+		GroupVersion:     groupVersion,
+		MetaGroupVersion: apiGroupInfo.MetaGroupVersion,
 
 		ParameterCodec:        apiGroupInfo.ParameterCodec,
 		Serializer:            apiGroupInfo.NegotiatedSerializer,
@@ -950,13 +953,13 @@ func NewDefaultAPIGroupInfo(group string, scheme *runtime.Scheme, parameterCodec
 }
 
 // getOpenAPIModels is a private method for getting the OpenAPI models
-func (s *GenericAPIServer) getOpenAPIModels(apiPrefix string, apiGroupInfos ...*APIGroupInfo) (managedfields.TypeConverter, error) {
+func (s *GenericAPIServer) getOpenAPIModels(apiPrefix string, apiGroupInfos ...*APIGroupInfo) (map[string]*spec.Schema, error) {
 	if s.openAPIV3Config == nil {
-		// SSA is GA and requires OpenAPI config to be set
-		// to create models.
-		return nil, errors.New("OpenAPIV3 config must not be nil")
+		//!TODO: A future work should add a requirement that
+		// OpenAPIV3 config is required. May require some refactoring of tests.
+		return nil, nil
 	}
-	pathsToIgnore := openapiutil.NewTrie(s.openAPIV3Config.IgnorePrefixes)
+	pathsToIgnore := openapiutil.NewTrie(s.openAPIConfig.IgnorePrefixes)
 	resourceNames := make([]string, 0)
 	for _, apiGroupInfo := range apiGroupInfos {
 		groupResources, err := getResourceNamesForGroup(apiPrefix, apiGroupInfo, pathsToIgnore)
@@ -974,13 +977,7 @@ func (s *GenericAPIServer) getOpenAPIModels(apiPrefix string, apiGroupInfos ...*
 	for _, apiGroupInfo := range apiGroupInfos {
 		apiGroupInfo.StaticOpenAPISpec = openAPISpec
 	}
-
-	typeConverter, err := managedfields.NewTypeConverter(openAPISpec, false)
-	if err != nil {
-		return nil, err
-	}
-
-	return typeConverter, nil
+	return openAPISpec, nil
 }
 
 // getResourceNamesForGroup is a private method for getting the canonical names for each resource to build in an api group

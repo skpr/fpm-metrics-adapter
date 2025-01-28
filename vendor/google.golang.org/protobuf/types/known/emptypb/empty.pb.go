@@ -44,9 +44,11 @@ import (
 // empty messages in your APIs. A typical example is to use it as the request
 // or the response type of an API method. For instance:
 //
-//	service Foo {
-//	  rpc Bar(google.protobuf.Empty) returns (google.protobuf.Empty);
-//	}
+//     service Foo {
+//       rpc Bar(google.protobuf.Empty) returns (google.protobuf.Empty);
+//     }
+//
+// The JSON representation for `Empty` is empty JSON object `{}`.
 type Empty struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -55,9 +57,11 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_google_protobuf_empty_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
+	if protoimpl.UnsafeEnabled {
+		mi := &file_google_protobuf_empty_proto_msgTypes[0]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
 }
 
 func (x *Empty) String() string {
@@ -68,7 +72,7 @@ func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
 	mi := &file_google_protobuf_empty_proto_msgTypes[0]
-	if x != nil {
+	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
 			ms.StoreMessageInfo(mi)
@@ -113,7 +117,7 @@ func file_google_protobuf_empty_proto_rawDescGZIP() []byte {
 }
 
 var file_google_protobuf_empty_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
-var file_google_protobuf_empty_proto_goTypes = []any{
+var file_google_protobuf_empty_proto_goTypes = []interface{}{
 	(*Empty)(nil), // 0: google.protobuf.Empty
 }
 var file_google_protobuf_empty_proto_depIdxs = []int32{
@@ -128,6 +132,20 @@ func init() { file_google_protobuf_empty_proto_init() }
 func file_google_protobuf_empty_proto_init() {
 	if File_google_protobuf_empty_proto != nil {
 		return
+	}
+	if !protoimpl.UnsafeEnabled {
+		file_google_protobuf_empty_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Empty); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
