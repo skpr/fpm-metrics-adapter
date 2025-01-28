@@ -29,11 +29,11 @@ import (
 )
 
 const (
-	// MetricActiveProcesses provides the number of requests (backlog) currently waiting for a free process.
+	// MetricListenQueue provides the number of requests (backlog) currently waiting for a free process.
 	MetricListenQueue = "phpfpm_listen_queue"
 	// MetricListenQueueLen provides the maximum allowed size of the listen queue.
 	MetricListenQueueLen = "phpfpm_listen_queue_len"
-	// MetricActiveProcesses provides the number of processes that are currently idle (waiting for requests).
+	// MetricIdleProcesses provides the number of processes that are currently idle (waiting for requests).
 	MetricIdleProcesses = "phpfpm_idle_processes"
 	// MetricActiveProcesses provides the number of processes that are currently processing requests.
 	MetricActiveProcesses = "phpfpm_active_processes"
