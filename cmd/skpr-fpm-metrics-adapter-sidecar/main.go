@@ -1,7 +1,7 @@
+// Package skpr-fpm-metrics-adapter-sidecar for the sidecar entrypoint.
 package main
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -67,7 +67,7 @@ func main() {
 				return fmt.Errorf("failed to start server: %w", err)
 			}
 
-			err = server.Run(context.TODO())
+			err = server.Run(cmd.Context())
 			if err != nil {
 				return fmt.Errorf("server failed: %w", err)
 			}

@@ -1,3 +1,4 @@
+// Package sidecar for collecting metrics from FPM.
 package sidecar
 
 import (
@@ -22,7 +23,7 @@ type Server struct {
 	config ServerConfig
 }
 
-// Config which is used by the HTTP server.
+// ServerConfig which is used by the HTTP server.
 type ServerConfig struct {
 	// Port that the server will service traffic on.
 	Port string
@@ -94,7 +95,7 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 // Handler to return the latest status.
-func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handler(w http.ResponseWriter, _ *http.Request) {
 	s.logger.Debug("Handling request")
 
 	jsonBytes, err := json.Marshal(s.status)

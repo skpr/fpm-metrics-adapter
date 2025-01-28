@@ -1,3 +1,4 @@
+// Package fpm for interacting with the FPM process.
 package fpm
 
 import (

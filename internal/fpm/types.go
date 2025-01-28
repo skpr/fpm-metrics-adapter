@@ -6,7 +6,6 @@ package fpm
 type QueryResponse struct {
 	ProcessManager     string `json:"process manager"`
 	ListenQueue        int64  `json:"listen queue"`
-	MaxListenQueue     int64  `json:"max listen queue"`
 	ListenQueueLen     int64  `json:"listen queue len"`
 	IdleProcesses      int64  `json:"idle processes"`
 	ActiveProcesses    int64  `json:"active processes"`
@@ -20,8 +19,6 @@ type Status struct {
 	ProcessManager string `json:"process_manager"`
 	// The number of requests (backlog) currently waiting for a free process.
 	ListenQueue int64 `json:"listen_queue"`
-	// The maximum number of requests seen in the listen queue at any one time.
-	MaxListenQueue int64 `json:"max_listen_queue"`
 	// The maximum allowed size of the listen queue.
 	ListenQueueLen int64 `json:"listen_queue_len"`
 	// The number of processes that are currently idle (waiting for requests).

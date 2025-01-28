@@ -1,3 +1,4 @@
+// Package provider for Kubernetes metrics adapter integration.
 package provider
 
 import (
@@ -30,8 +31,6 @@ import (
 const (
 	// MetricActiveProcesses provides the number of requests (backlog) currently waiting for a free process.
 	MetricListenQueue = "phpfpm_listen_queue"
-	// MetricActiveProcesses provides the maximum number of requests seen in the listen queue at any one time.
-	MetricMaxListenQueue = "phpfpm_max_listen_queue"
 	// MetricListenQueueLen provides the maximum allowed size of the listen queue.
 	MetricListenQueueLen = "phpfpm_listen_queue_len"
 	// MetricActiveProcesses provides the number of processes that are currently idle (waiting for requests).
@@ -86,7 +85,7 @@ func New(logger *slog.Logger, client dynamic.Interface, config *rest.Config, map
 }
 
 // GetMetricByName returns a single metric by name.
-func (p *Provider) GetMetricByName(ctx context.Context, name types.NamespacedName, info provider.CustomMetricInfo, metricSelector labels.Selector) (*custom_metrics.MetricValue, error) {
+func (p *Provider) GetMetricByName(ctx context.Context, name types.NamespacedName, info provider.CustomMetricInfo, _ labels.Selector) (*custom_metrics.MetricValue, error) {
 	ref, err := helpers.ReferenceFor(p.mapper, name, info)
 	if err != nil {
 		return nil, err
@@ -166,11 +165,6 @@ func (p *Provider) ListAllMetrics() []provider.CustomMetricInfo {
 		},
 		{
 			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
-			Metric:        MetricMaxListenQueue,
-			Namespaced:    true,
-		},
-		{
-			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
 			Metric:        MetricListenQueueLen,
 			Namespaced:    true,
 		},
@@ -222,8 +216,19 @@ func scrape(ctx context.Context, clientset *kubernetes.Clientset, namespace, nam
 		return 0, err
 	}
 
-	if metric == MetricActiveProcesses {
+	switch metric {
+	case MetricListenQueue:
+		return status.ListenQueue, nil
+	case MetricListenQueueLen:
+		return status.ListenQueueLen, nil
+	case MetricIdleProcesses:
+		return status.IdleProcesses, nil
+	case MetricActiveProcesses:
 		return status.ActiveProcesses, nil
+	case MetricTotalProcesses:
+		return status.TotalProcesses, nil
+	case MetricMaxActiveProcesses:
+		return status.MaxActiveProcesses, nil
 	}
 
 	return 0, errors.New("not found")

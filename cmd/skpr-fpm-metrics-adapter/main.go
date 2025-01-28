@@ -1,3 +1,4 @@
+// Package skpr-fpm-metrics-adapter for the metrics-adapter entrypoint.
 package main
 
 import (
@@ -72,7 +73,7 @@ func main() {
 		Short:   "Run the Kubernetes metrics adapter",
 		Long:    cmdLong,
 		Example: cmdExample,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			lvl := new(slog.LevelVar)
 
 			switch o.LogLevel {
