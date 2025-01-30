@@ -3,8 +3,6 @@ package sidecar
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -104,65 +102,4 @@ func (s *Server) Run(ctx context.Context) error {
 	})
 
 	return group.Wait()
-}
-
-// Handler to return the latest status.
-func (s *Server) handler(w http.ResponseWriter, _ *http.Request) {
-	s.logger.Debug("Handling request")
-
-	jsonBytes, err := json.Marshal(s.status)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		s.logger.Error("failed to marshal status response", "error", err.Error())
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(jsonBytes)
-
-	s.logger.Debug("Request complete")
-}
-
-// The process which will continually refresh the current status.
-func (s *Server) refreshStatus(ctx context.Context) error {
-	ticker := time.NewTicker(s.config.EndpointPoll)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-			s.logger.Debug("Querying for FPM status")
-
-			status, err := fpm.QueryStatus(s.config.Endpoint)
-			if err != nil {
-				s.logger.Error("failed to collect FPM status", "error", err.Error())
-				continue
-			}
-
-			s.logger.Debug("Successfully queries latest FPM status", "response", status)
-
-			s.status = status
-		}
-	}
-}
-
-// The process which will continually log the current status.
-func (s *Server) logStatus(ctx context.Context) error {
-	ticker := time.NewTicker(s.config.LogFrequency)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-			jsonBytes, err := json.Marshal(s.status)
-			if err != nil {
-				s.logger.Error("failed to marshal status for logger", "error", err.Error())
-			}
-
-			fmt.Println(string(jsonBytes))
-		}
-	}
 }
