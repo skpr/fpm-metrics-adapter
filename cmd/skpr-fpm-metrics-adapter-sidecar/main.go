@@ -82,7 +82,8 @@ func main() {
 	cmd.PersistentFlags().StringVar(&o.ServerConfig.Port, "port", env.String("SKPR_FPM_METRICS_ADAPTER_PORT", ":80"), "Port which our metrics endpoint will be served on")
 	cmd.PersistentFlags().StringVar(&o.ServerConfig.Path, "path", env.String("SKPR_FPM_METRICS_ADAPTER_PATH", "/metrics"), "Path which our metrics endpoint will be served on")
 	cmd.PersistentFlags().StringVar(&o.ServerConfig.Endpoint, "endpoint", env.String("SKPR_FPM_METRICS_ADAPTER_ENDPOINT", "127.0.0.1:9000"), "Endpoint which we will poll for FPM status information")
-	cmd.PersistentFlags().DurationVar(&o.ServerConfig.Frequency, "frequency", env.Duration("SKPR_FPM_METRICS_ADAPTER_FREQUENCY", 10*time.Second), "How frequently to poll for status information")
+	cmd.PersistentFlags().DurationVar(&o.ServerConfig.EndpointPoll, "endpoint-poll", env.Duration("SKPR_FPM_METRICS_ADAPTER_ENDPOINT_POLL", 10*time.Second), "How frequently to poll the endpoint for status information")
+	cmd.PersistentFlags().DurationVar(&o.ServerConfig.LogFrequency, "log-frequency", env.Duration("SKPR_FPM_METRICS_ADAPTER_LOG_FREQUENCY", 30*time.Second), "How frequently to log status information for external systems")
 
 	err := cmd.Execute()
 	if err != nil {

@@ -3,7 +3,6 @@ package sidecar
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
@@ -31,8 +30,10 @@ type ServerConfig struct {
 	Path string
 	// Endpoint for querying the latest FPM status information.
 	Endpoint string
-	// Frequency for collecting FPM status information.
-	Frequency time.Duration
+	// EndpointPoll frequency for collecting FPM status information.
+	EndpointPoll time.Duration
+	// LogFrequency for how often a status is logged for external systems.
+	LogFrequency time.Duration
 }
 
 // NewServer for collecting and responding with the latest FPM status.
@@ -62,7 +63,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	// Run the HTTP server.
 	group.Go(func() error {
-		// We want to cancel the refresher if the server exits.
+		// We want to shutdown all other tasks if this logger exits.
 		defer cancel()
 
 		s.logger.Info("Starting server")
@@ -84,54 +85,21 @@ func (s *Server) Run(ctx context.Context) error {
 
 	// Query FPM periodically for statistics.
 	group.Go(func() error {
-		// We want to shutdown the server if the refresh completes.
+		// We want to shutdown all other tasks if this logger exits.
 		defer cancel()
 
 		s.logger.Info("Starting refresher")
-		return s.refresh(ctx)
+		return s.refreshStatus(ctx)
+	})
+
+	// Logger for emmit metrics as a log event for external systems.
+	group.Go(func() error {
+		// We want to shutdown all other tasks if this logger exits.
+		defer cancel()
+
+		s.logger.Info("Starting logger")
+		return s.logStatus(ctx)
 	})
 
 	return group.Wait()
-}
-
-// Handler to return the latest status.
-func (s *Server) handler(w http.ResponseWriter, _ *http.Request) {
-	s.logger.Debug("Handling request")
-
-	jsonBytes, err := json.Marshal(s.status)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		s.logger.Error("failed to marshal status response", "error", err.Error())
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(jsonBytes)
-
-	s.logger.Debug("Request complete")
-}
-
-// The process which will continually refresh the current status.
-func (s *Server) refresh(ctx context.Context) error {
-	ticker := time.NewTicker(s.config.Frequency)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-			s.logger.Debug("Querying for FPM status")
-
-			status, err := fpm.QueryStatus(s.config.Endpoint)
-			if err != nil {
-				s.logger.Error("failed to collect FPM status", "error", err.Error())
-				continue
-			}
-
-			s.logger.Debug("Successfully queries latest FPM status", "response", status)
-
-			s.status = status
-		}
-	}
 }
