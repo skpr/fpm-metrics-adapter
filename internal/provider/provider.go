@@ -40,7 +40,7 @@ const (
 	// MetricTotalProcesses provides the current total number of processes.
 	MetricTotalProcesses = "phpfpm_total_processes"
 	// MetricMaxActiveProcesses provides the maximum number of concurrently active processes.
-	MetricMaxActiveProcesses = "max_active_processes"
+	MetricMaxActiveProcesses = "phpfpm_max_active_processes"
 
 	// AnnotationProtocol is used for configuration which protocol is used for querying metrics.
 	AnnotationProtocol = "fpm.skpr.io/protocol"
