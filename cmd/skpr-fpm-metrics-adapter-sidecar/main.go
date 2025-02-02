@@ -63,7 +63,7 @@ func main() {
 
 			logger.Info("Booting sidecar")
 
-			server, err := sidecar.NewServer(logger, o.ServerConfig)
+			server, err := sidecar.NewServer(logger, o.ServerConfig, o.StatusLogger)
 			if err != nil {
 				return fmt.Errorf("failed to start server: %w", err)
 			}
