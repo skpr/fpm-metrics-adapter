@@ -9,7 +9,7 @@ import (
 
 // The process which will continually log the current status.
 func (s *Server) logStatus(ctx context.Context) error {
-	ticker := time.NewTicker(s.statusLogger.Frequency)
+	ticker := time.NewTicker(s.config.LogFrequency)
 
 	for {
 		select {
