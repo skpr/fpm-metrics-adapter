@@ -20,6 +20,8 @@ type Server struct {
 	status fpm.Status
 	// Configuration used by the HTTP server.
 	config ServerConfig
+	// Configuration used by the status logger.
+	statusLogger LogStatus
 }
 
 // ServerConfig which is used by the HTTP server.
@@ -32,15 +34,22 @@ type ServerConfig struct {
 	Endpoint string
 	// EndpointPoll frequency for collecting FPM status information.
 	EndpointPoll time.Duration
-	// LogFrequency for how often a status is logged for external systems.
-	LogFrequency time.Duration
+}
+
+// LogStatus is used to configure the status logger.
+type LogStatus struct {
+	// If the status logger is enabled.
+	Enabled bool
+	// How frequency to log the status.
+	Frequency time.Duration
 }
 
 // NewServer for collecting and responding with the latest FPM status.
-func NewServer(logger *slog.Logger, config ServerConfig) (*Server, error) {
+func NewServer(logger *slog.Logger, config ServerConfig, statusLogger LogStatus) (*Server, error) {
 	server := &Server{
-		logger: logger,
-		config: config,
+		logger:       logger,
+		config:       config,
+		statusLogger: statusLogger,
 	}
 
 	return server, nil
@@ -94,6 +103,10 @@ func (s *Server) Run(ctx context.Context) error {
 
 	// Logger for emmit metrics as a log event for external systems.
 	group.Go(func() error {
+		if !s.statusLogger.Enabled {
+			return nil
+		}
+
 		// We want to shutdown all other tasks if this logger exits.
 		defer cancel()
 
