@@ -30,6 +30,7 @@ var (
 type Options struct {
 	ServerConfig sidecar.ServerConfig
 	LogLevel     string
+	StatusLogger sidecar.LogStatus
 }
 
 func main() {
@@ -62,7 +63,7 @@ func main() {
 
 			logger.Info("Booting sidecar")
 
-			server, err := sidecar.NewServer(logger, o.ServerConfig)
+			server, err := sidecar.NewServer(logger, o.ServerConfig, o.StatusLogger)
 			if err != nil {
 				return fmt.Errorf("failed to start server: %w", err)
 			}
@@ -83,7 +84,8 @@ func main() {
 	cmd.PersistentFlags().StringVar(&o.ServerConfig.Path, "path", env.String("SKPR_FPM_METRICS_ADAPTER_PATH", "/metrics"), "Path which our metrics endpoint will be served on")
 	cmd.PersistentFlags().StringVar(&o.ServerConfig.Endpoint, "endpoint", env.String("SKPR_FPM_METRICS_ADAPTER_ENDPOINT", "127.0.0.1:9000"), "Endpoint which we will poll for FPM status information")
 	cmd.PersistentFlags().DurationVar(&o.ServerConfig.EndpointPoll, "endpoint-poll", env.Duration("SKPR_FPM_METRICS_ADAPTER_ENDPOINT_POLL", 10*time.Second), "How frequently to poll the endpoint for status information")
-	cmd.PersistentFlags().DurationVar(&o.ServerConfig.LogFrequency, "log-frequency", env.Duration("SKPR_FPM_METRICS_ADAPTER_LOG_FREQUENCY", 30*time.Second), "How frequently to log status information for external systems")
+	cmd.PersistentFlags().BoolVar(&o.StatusLogger.Enabled, "log-enabled", env.Bool("SKPR_FPM_METRICS_ADAPTER_LOG_STATUS_ENABLED", false), "If the status logger is enabled")
+	cmd.PersistentFlags().DurationVar(&o.StatusLogger.Frequency, "log-frequency", env.Duration("SKPR_FPM_METRICS_ADAPTER_LOG_STATUS_FREQUENCY", 30*time.Second), "How frequently to log status information for external systems")
 
 	err := cmd.Execute()
 	if err != nil {
