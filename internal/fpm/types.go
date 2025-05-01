@@ -16,17 +16,17 @@ type QueryResponse struct {
 // Status of the FPM pool.
 type Status struct {
 	// The process manager type - static, dynamic or ondemand.
-	ProcessManager string `json:"process_manager"`
+	ProcessManager string `json:"phpfpm_process_manager"`
 	// The number of requests (backlog) currently waiting for a free process.
-	ListenQueue int64 `json:"listen_queue"`
+	ListenQueue int64 `json:"phpfpm_listen_queue"`
 	// The maximum allowed size of the listen queue.
-	ListenQueueLen int64 `json:"listen_queue_len"`
+	ListenQueueLen int64 `json:"phpfpm_listen_queue_len"`
 	// The number of processes that are currently idle (waiting for requests).
-	IdleProcesses int64 `json:"idle_processes"`
+	IdleProcesses int64 `json:"phpfpm_idle_processes"`
 	// The number of processes that are currently processing requests.
-	ActiveProcesses int64 `json:"active_processes"`
+	ActiveProcesses int64 `json:"phpfpm_active_processes"`
 	// The current total number of processes.
-	TotalProcesses int64 `json:"total_processes"`
+	TotalProcesses int64 `json:"phpfpm_total_processes"`
 	// The maximum number of concurrently active processes.
-	MaxActiveProcesses int64 `json:"max_active_processes"`
+	MaxActiveProcesses int64 `json:"phpfpm_max_active_processes"`
 }
