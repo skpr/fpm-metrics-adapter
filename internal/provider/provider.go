@@ -209,7 +209,10 @@ func scrape(ctx context.Context, clientset *kubernetes.Clientset, namespace, nam
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
+
+	defer func() {
+		err = resp.Body.Close()
+	}()
 
 	err = json.NewDecoder(resp.Body).Decode(&status)
 	if err != nil {
@@ -246,15 +249,15 @@ func getConn(pod *corev1.Pod) (string, error) {
 		path     = DefaultPath
 	)
 
-	if val, ok := pod.ObjectMeta.Annotations[AnnotationProtocol]; ok {
+	if val, ok := pod.Annotations[AnnotationProtocol]; ok {
 		protocol = val
 	}
 
-	if val, ok := pod.ObjectMeta.Annotations[AnnotationPort]; ok {
+	if val, ok := pod.Annotations[AnnotationPort]; ok {
 		port = val
 	}
 
-	if val, ok := pod.ObjectMeta.Annotations[AnnotationPath]; ok {
+	if val, ok := pod.Annotations[AnnotationPath]; ok {
 		path = val
 	}
 
