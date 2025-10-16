@@ -61,6 +61,7 @@ jobs:
 
       - name: Test sidecar
         run: | 
-          mise run:sidecar &
+          mise build
+          ./bin/skpr-fpm-metrics-adapter-sidecar --port :8080 &
           sleep 5
           mise test:integration
