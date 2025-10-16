@@ -98,7 +98,10 @@ func TestGetMetric(t *testing.T) {
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/metrics" && r.Method == http.MethodGet {
 			w.WriteHeader(http.StatusOK)
-			w.Write(jsonValue)
+			_, err := w.Write(jsonValue)
+			if err != nil {
+				t.Fatalf("unable to write response: %v", err)
+			}
 			return
 		}
 		http.NotFound(w, r)
