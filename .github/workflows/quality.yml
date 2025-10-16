@@ -59,11 +59,8 @@ jobs:
         run: |
           docker compose up --quiet-pull -d
 
-      - name: Start sidecar
-        run: mise run:sidecar &
-
-      - name: Wait
-        run: sleep 5
-
-      - name: Test
-        run: mise test:integration
+      - name: Test sidecar
+        run: | 
+          mise run:sidecar &
+          sleep 5
+          mise test:integration
