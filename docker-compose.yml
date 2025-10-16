@@ -1,0 +1,8 @@
+services:
+
+  php-fpm:
+    image: docker.io/skpr/php-fpm:8.2-dev-v2-latest
+    ports:
+      - 9000:9000
+    volumes:
+      - ./tests/fixtures:/data/app
