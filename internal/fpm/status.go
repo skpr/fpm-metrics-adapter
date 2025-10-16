@@ -29,7 +29,9 @@ func QueryStatus(address string) (Status, error) {
 		return status, err
 	}
 
-	defer resp.Body.Close()
+	defer func() {
+		err = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 0 {
 		return status, fmt.Errorf("status code was: %d", resp.StatusCode)

@@ -18,7 +18,11 @@ func (s *Server) handler(w http.ResponseWriter, _ *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(jsonBytes)
+	_, err = w.Write(jsonBytes)
+	if err != nil {
+		s.logger.Error("failed to write status response", "error", err.Error())
+		return
+	}
 
 	s.logger.Debug("Request complete")
 }

@@ -14,16 +14,15 @@ import (
 )
 
 var (
-	cmdLong = `
-		Run the sidecar which collects profiles and prints them to stdout.`
+	cmdLong = `Run the sidecar which collects profiles and prints them to stdout.`
 
 	cmdExample = `
-		# Run the sidecar with the defaults.
-		skpr-metrics-adapter-sidecar
+  # Run the sidecar with the defaults.
+  skpr-metrics-adapter-sidecar
 
-		# Enable debug logs.
-		export SKPR_FPM_METRICS_ADAPTER_LOG_LEVEL=debug
-		skpr-metrics-adapter-sidecar`
+  # Enable debug logs.
+  export SKPR_FPM_METRICS_ADAPTER_LOG_LEVEL=debug
+  skpr-metrics-adapter-sidecar`
 )
 
 // Options for this sidecar application.

@@ -12,15 +12,16 @@ jobs:
       - name: ⬇️ Git clone the repository
         uses: actions/checkout@v3
 
-      - name: 📦 Install Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: '1.21'
-
-      - name: 🧪 Revive
+      - name: 📦 Install Mise
         run: |
-          go install github.com/mgechev/revive@latest
-          make lint
+          curl https://mise.run | sh
+          mise install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🧪 Lint
+        run: |
+          mise lint
 
   test:
     name: 📋 Test
@@ -30,10 +31,13 @@ jobs:
       - name: ⬇️ Git clone the repository
         uses: actions/checkout@v3
 
-      - name: 📦 Install Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: '1.21'
+      - name: 📦 Install Mise
+        run: |
+          curl https://mise.run | sh
+          mise install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🧪 Test
-        run: go test ./...
+      - name: 🧪 Lint
+        run: |
+          mise test

@@ -22,16 +22,15 @@ var (
 	// Name for identifying which adapter is providing metrics.
 	adapterName = "skpr-fpm-metrics-adapter"
 
-	cmdLong = `
-		Run the metrics adapter with collects FPM status information.`
+	cmdLong = `Run the metrics adapter with collects FPM status information.`
 
 	cmdExample = `
-		# Run the adapter with the defaults.
-		skpr-fpm-metrics-adapter
+  # Run the adapter with the defaults.
+  skpr-fpm-metrics-adapter
 
-		# Run the adapter with a longer cache expiration.
-		export SKPR_FPM_METRICS_ADAPTER_CACHE_EXPIRATION=120s
-		skpr-fpm-metrics-adapter`
+  # Run the adapter with a longer cache expiration.
+  export SKPR_FPM_METRICS_ADAPTER_CACHE_EXPIRATION=120s
+  skpr-fpm-metrics-adapter`
 )
 
 // Adapter for custom metrics.
