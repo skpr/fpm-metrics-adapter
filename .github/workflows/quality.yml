@@ -20,8 +20,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🧪 Lint
-        run: |
-          mise lint
+        run: mise lint
 
   test:
     name: 📋 Test
@@ -39,30 +38,29 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🧪 Lint
+        run: mise test
+
+  integration-test:
+    name: 📋 Integration test
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Git clone the repository
+        uses: actions/checkout@v5
+
+      - name: 📦 Install Mise
         run: |
-          mise test
+          curl https://mise.run | sh
+          mise install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    integration-test:
-      name: 📋 Integration test
-      needs: test
-      runs-on: ubuntu-latest
-      steps:
-        - name: ⬇️ Git clone the repository
-          uses: actions/checkout@v5
+      - name: Start FPM
+        run: |
+          docker compose up -d
 
-        - name: 📦 Install Mise
-          run: |
-            curl https://mise.run | sh
-            mise install
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Test
+        run: mise run:sidecar &
 
-        - name: Start FPM
-          run: |
-            docker compose up -d
-
-        - name: Test
-          run: mise run:sidecar &
-
-        - name: Test
-          run: mise test:integration
+      - name: Test
+        run: mise test:integration
