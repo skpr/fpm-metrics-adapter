@@ -57,7 +57,7 @@ jobs:
 
       - name: Start FPM
         run: |
-          docker compose up -d
+          docker compose up --quiet-pull -d
 
       - name: Test
         run: mise run:sidecar &
