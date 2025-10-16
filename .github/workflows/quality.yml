@@ -63,5 +63,6 @@ jobs:
         run: | 
           mise build
           ./bin/skpr-fpm-metrics-adapter-sidecar --port :8080 &
-          sleep 5
+          # Needed because if request comes too early, server hasn't fetched results
+          sleep 15
           mise test:integration
