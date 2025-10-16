@@ -192,9 +192,7 @@ func (p *Provider) ListAllMetrics() []provider.CustomMetricInfo {
 }
 
 // Scrape the context of the PHP-FPM exporter.
-func scrape(ctx context.Context, clientset *kubernetes.Clientset, namespace, name, metric string) (int64, error) {
-	var status fpm.Status
-
+func scrape(ctx context.Context, clientset kubernetes.Interface, namespace, name, metric string) (int64, error) {
 	pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return 0, err
@@ -204,6 +202,17 @@ func scrape(ctx context.Context, clientset *kubernetes.Clientset, namespace, nam
 	if err != nil {
 		return 0, err
 	}
+
+	resp, err := getMetric(endpoint, metric)
+	if err != nil {
+		return 0, err
+	}
+
+	return resp, nil
+}
+
+func getMetric(endpoint string, metric string) (int64, error) {
+	var status fpm.Status
 
 	resp, err := http.Get(endpoint)
 	if err != nil {
