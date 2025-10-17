@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/christgf/env"
 	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/component-base/metrics/legacyregistry"
 	"sigs.k8s.io/custom-metrics-apiserver/pkg/apiserver/metrics"
 	basecmd "sigs.k8s.io/custom-metrics-apiserver/pkg/cmd"
@@ -114,7 +114,7 @@ func main() {
 
 			logger.Info("Running adapter")
 
-			if err := adapter.Run(wait.NeverStop); err != nil {
+			if err := adapter.Run(context.TODO()); err != nil {
 				return fmt.Errorf("failed to run adapter: %w", err)
 			}
 

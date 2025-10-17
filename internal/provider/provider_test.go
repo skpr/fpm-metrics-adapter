@@ -15,7 +15,7 @@ import (
 )
 
 func getClientset() *fake.Clientset {
-	fakeClientset := fake.NewSimpleClientset(
+	fakeClientset := fake.NewClientset(
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "fail-ip",
