@@ -2,7 +2,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -72,7 +71,7 @@ func main() {
 		Short:   "Run the Kubernetes metrics adapter",
 		Long:    cmdLong,
 		Example: cmdExample,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			lvl := new(slog.LevelVar)
 
 			switch o.LogLevel {
@@ -114,7 +113,7 @@ func main() {
 
 			logger.Info("Running adapter")
 
-			if err := adapter.Run(context.TODO()); err != nil {
+			if err := adapter.Run(cmd.Context()); err != nil {
 				return fmt.Errorf("failed to run adapter: %w", err)
 			}
 

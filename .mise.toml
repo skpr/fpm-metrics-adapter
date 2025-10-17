@@ -42,6 +42,11 @@ depends = ["vendor"]
 description = "Checks to verify code correctness"
 run = "go test -cover -tags=integration ./internal/tests"
 
+[tasks."run:adapter"]
+description = "Run the sidecar locally"
+run = "./bin/skpr-fpm-metrics-adapter"
+depends = ["build skpr-fpm-metrics-adapter"]
+
 [tasks."run:sidecar"]
 description = "Run the sidecar locally"
 run = "./bin/skpr-fpm-metrics-adapter-sidecar --port :8080"
