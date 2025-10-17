@@ -14,11 +14,17 @@ run = "go mod vendor"
 description = "Tidy makes sure go.mod matches the source code in the module"
 run = "go mod tidy"
 
+[tasks."build:all"]
+description = "Build all the applications"
+depends = [
+  "build skpr-fpm-metrics-adapter",
+  "build skpr-fpm-metrics-adapter-sidecar"
+]
+
 [tasks.build]
 description = "Build the application"
 run = '''
-go build -o bin/skpr-fpm-metrics-adapter -ldflags=${CLI_LDFLAGS} github.com/skpr/fpm-metrics-adapter/cmd/skpr-fpm-metrics-adapter
-go build -o bin/skpr-fpm-metrics-adapter-sidecar -ldflags=${CLI_LDFLAGS} github.com/skpr/fpm-metrics-adapter/cmd/skpr-fpm-metrics-adapter-sidecar
+go build -o bin/{{arg(name="app")}} -ldflags=${CLI_LDFLAGS} github.com/skpr/fpm-metrics-adapter/cmd/{{arg(name="app")}}
 '''
 depends = ["vendor"]
 
@@ -31,6 +37,15 @@ depends = ["tidy"]
 description = "Checks to verify code correctness"
 run = "go test -cover ./..."
 depends = ["vendor"]
+
+[tasks."test:integration"]
+description = "Checks to verify code correctness"
+run = "go test -cover -tags=integration ./internal/tests"
+
+[tasks."run:sidecar"]
+description = "Run the sidecar locally"
+run = "./bin/skpr-fpm-metrics-adapter-sidecar --port :8080"
+depends = ["build skpr-fpm-metrics-adapter-sidecar"]
 
 [tasks.release]
 description = "Release the command line interface"

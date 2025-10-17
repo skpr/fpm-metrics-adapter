@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: ⬇️ Git clone the repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
 
       - name: 📦 Install Mise
         run: |
@@ -20,8 +20,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🧪 Lint
-        run: |
-          mise lint
+        run: mise lint
 
   test:
     name: 📋 Test
@@ -29,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: ⬇️ Git clone the repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
 
       - name: 📦 Install Mise
         run: |
@@ -39,5 +38,31 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🧪 Lint
+        run: mise test
+
+  integration-test:
+    name: 📋 Integration test
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Git clone the repository
+        uses: actions/checkout@v5
+
+      - name: 📦 Install Mise
         run: |
-          mise test
+          curl https://mise.run | sh
+          mise install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Start FPM
+        run: |
+          docker compose up --quiet-pull -d
+
+      - name: Test sidecar
+        run: | 
+          mise build skpr-fpm-metrics-adapter-sidecar
+          ./bin/skpr-fpm-metrics-adapter-sidecar --port :8080 &
+          # Needed because if request comes too early, server hasn't fetched results
+          sleep 15
+          mise test:integration
