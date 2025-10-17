@@ -9,7 +9,6 @@ import (
 
 	"github.com/christgf/env"
 	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/component-base/metrics/legacyregistry"
 	"sigs.k8s.io/custom-metrics-apiserver/pkg/apiserver/metrics"
 	basecmd "sigs.k8s.io/custom-metrics-apiserver/pkg/cmd"
@@ -72,7 +71,7 @@ func main() {
 		Short:   "Run the Kubernetes metrics adapter",
 		Long:    cmdLong,
 		Example: cmdExample,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			lvl := new(slog.LevelVar)
 
 			switch o.LogLevel {
@@ -114,7 +113,7 @@ func main() {
 
 			logger.Info("Running adapter")
 
-			if err := adapter.Run(wait.NeverStop); err != nil {
+			if err := adapter.Run(cmd.Context()); err != nil {
 				return fmt.Errorf("failed to run adapter: %w", err)
 			}
 
