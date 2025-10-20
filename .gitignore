@@ -2,3 +2,4 @@ apiserver.local.config
 .kube
 /bin
 /vendor
+/dist
