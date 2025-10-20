@@ -48,8 +48,8 @@ dockers:
     goarch: arm64
   - dockerfile: dockerfiles/sidecar/Dockerfile
     image_templates:
-      - "ghcr.io/skpr/fpm-metrics-adapter:sidecar-v{{ .Version }}-amd64r"
-      - "ghcr.io/skpr/fpm-metrics-adapter:sidecar-latest-amd64-whisper"
+      - "ghcr.io/skpr/fpm-metrics-adapter:sidecar-v{{ .Version }}-amd64"
+      - "ghcr.io/skpr/fpm-metrics-adapter:sidecar-latest-amd64"
     build_flag_templates:
       - "--pull"
       - "--platform=linux/amd64"
