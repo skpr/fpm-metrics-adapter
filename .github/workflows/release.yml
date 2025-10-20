@@ -9,10 +9,6 @@ permissions:
   contents: write
   packages: write
 
-env:
-  SKPR_USERNAME: ${{ secrets.SKPR_USERNAME }}
-  SKPR_PASSWORD: ${{ secrets.SKPR_PASSWORD }}
-
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
