@@ -3,14 +3,15 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/prometheus/common/model"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/patrickmn/go-cache"
+	"github.com/prometheus/common/expfmt"
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -199,8 +200,6 @@ func scrape(ctx context.Context, clientset kubernetes.Interface, namespace, name
 }
 
 func getMetric(endpoint string, metric string) (int64, error) {
-	var status fpm.Status
-
 	resp, err := http.Get(endpoint)
 	if err != nil {
 		return 0, err
@@ -210,27 +209,18 @@ func getMetric(endpoint string, metric string) (int64, error) {
 		err = resp.Body.Close()
 	}()
 
-	err = json.NewDecoder(resp.Body).Decode(&status)
+	parser := expfmt.NewTextParser(model.UTF8Validation)
+	metrics, err := parser.TextToMetricFamilies(resp.Body)
 	if err != nil {
 		return 0, err
 	}
 
-	switch metric {
-	case fpm.MetricListenQueue:
-		return status.ListenQueue, nil
-	case fpm.MetricListenQueueLen:
-		return status.ListenQueueLen, nil
-	case fpm.MetricIdleProcesses:
-		return status.IdleProcesses, nil
-	case fpm.MetricActiveProcesses:
-		return status.ActiveProcesses, nil
-	case fpm.MetricTotalProcesses:
-		return status.TotalProcesses, nil
-	case fpm.MetricMaxActiveProcesses:
-		return status.MaxActiveProcesses, nil
+	m, ok := metrics[metric]
+	if !ok {
+		return 0, errors.New("not found")
 	}
-
-	return 0, errors.New("not found")
+	value := m.GetMetric()[0].GetGauge().GetValue()
+	return int64(value), nil
 }
 
 // Helper function to get connection details from a Pod.
