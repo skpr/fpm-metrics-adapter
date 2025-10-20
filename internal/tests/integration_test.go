@@ -3,12 +3,14 @@
 package tests
 
 import (
-	"encoding/json"
 	"fmt"
-	"github.com/christgf/env"
-	"io"
+	"github.com/skpr/fpm-metrics-adapter/internal/fpm"
 	"net/http"
 	"testing"
+
+	"github.com/christgf/env"
+	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 )
 
 type ExpectedMetricsResponse struct {
@@ -32,25 +34,19 @@ func TestMetrics(t *testing.T) {
 		t.Errorf("expected status OK, got %v", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	parser := expfmt.NewTextParser(model.UTF8Validation)
+	metrics, err := parser.TextToMetricFamilies(resp.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	result := &ExpectedMetricsResponse{}
-	err = json.Unmarshal(body, result)
-	if err != nil {
-		t.Fatal(err)
+	activeMetric := int64(metrics[fpm.MetricActiveProcesses].GetMetric()[0].GetGauge().GetValue())
+	if activeMetric != 1 {
+		t.Errorf("Expected %d, got %d", 1, activeMetric)
 	}
-
-	if result.PhpfpmProcessManager != "dynamic" {
-		t.Errorf("Expected %s, got %s", "dynamic", result.PhpfpmProcessManager)
-	}
-	if result.PhpfpmActiveProcesses != 1 {
-		t.Errorf("Expected %d, got %d", 1, result.PhpfpmActiveProcesses)
-	}
-	if result.PhpfpmIdleProcesses != 1 {
-		t.Errorf("Expected %d, got %d", 1, result.PhpfpmIdleProcesses)
+	idleMetric := int64(metrics[fpm.MetricIdleProcesses].GetMetric()[0].GetGauge().GetValue())
+	if idleMetric != 1 {
+		t.Errorf("Expected %d, got %d", 1, idleMetric)
 	}
 }
 

@@ -41,6 +41,7 @@ depends = ["vendor"]
 [tasks."test:integration"]
 description = "Checks to verify code correctness"
 run = "go test -cover -tags=integration ./internal/tests"
+depends = ["vendor"]
 
 [tasks."run:adapter"]
 description = "Run the sidecar locally"
