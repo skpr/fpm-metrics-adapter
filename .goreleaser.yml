@@ -28,59 +28,25 @@ archives:
 checksum:
   disable: true
 
-dockers:
-  - dockerfile: dockerfiles/metrics-adapter/Dockerfile
-    image_templates:
-      - "ghcr.io/skpr/fpm-metrics-adapter:apiserver-v{{ .Version }}-amd64"
-      - "ghcr.io/skpr/fpm-metrics-adapter:apiserver-latest-amd64"
-    build_flag_templates:
-      - "--pull"
-      - "--platform=linux/amd64"
-    use: buildx
-  - dockerfile: dockerfiles/metrics-adapter/Dockerfile
-    image_templates:
-      - "ghcr.io/skpr/fpm-metrics-adapter:apiserver-v{{ .Version }}-arm64"
-      - "ghcr.io/skpr/fpm-metrics-adapter:apiserver-latest-arm64"
-    build_flag_templates:
-      - "--pull"
-      - "--platform=linux/arm64"
-    use: buildx
-    goarch: arm64
-  - dockerfile: dockerfiles/sidecar/Dockerfile
-    image_templates:
-      - "ghcr.io/skpr/fpm-metrics-adapter:sidecar-v{{ .Version }}-amd64"
-      - "ghcr.io/skpr/fpm-metrics-adapter:sidecar-latest-amd64"
-    build_flag_templates:
-      - "--pull"
-      - "--platform=linux/amd64"
-    use: buildx
-  - dockerfile: dockerfiles/sidecar/Dockerfile
-    image_templates:
-      - "ghcr.io/skpr/fpm-metrics-adapter:sidecar-v{{ .Version }}-arm64"
-      - "ghcr.io/skpr/fpm-metrics-adapter:sidecar-latest-arm64"
-    build_flag_templates:
-      - "--pull"
-      - "--platform=linux/arm64"
-    use: buildx
-    goarch: arm64
-
-docker_manifests:
-  - name_template: "ghcr.io/skpr/fpm-metrics-adapter:apiserver-v{{ .Version }}"
-    image_templates:
-      - "ghcr.io/skpr/fpm-metrics-adapter:apiserver-v{{ .Version }}-amd64"
-      - "ghcr.io/skpr/fpm-metrics-adapter:apiserver-v{{ .Version }}-arm64"
-  - name_template: "ghcr.io/skpr/fpm-metrics-adapter:apiserver-latest"
-    image_templates:
-      - "ghcr.io/skpr/fpm-metrics-adapter:apiserver-latest-amd64"
-      - "ghcr.io/skpr/fpm-metrics-adapter:apiserver-latest-arm64"
-  - name_template: "ghcr.io/skpr/fpm-metrics-adapter:sidecar-v{{ .Version }}"
-    image_templates:
-      - "ghcr.io/skpr/fpm-metrics-adapter:sidecar-v{{ .Version }}-amd64"
-      - "ghcr.io/skpr/fpm-metrics-adapter:sidecar-v{{ .Version }}-arm64"
-  - name_template: "ghcr.io/skpr/fpm-metrics-adapter:sidecar-latest"
-    image_templates:
-      - "ghcr.io/skpr/fpm-metrics-adapter:sidecar-latest-amd64"
-      - "ghcr.io/skpr/fpm-metrics-adapter:sidecar-latest-arm64"
+dockers_v2:
+  - id: skpr-fpm-metrics-adapter
+    dockerfile: dockerfiles/metrics-adapter/Dockerfile
+    ids:
+      - skpr-fpm-metrics-adapter
+    images:
+      - "ghcr.io/skpr/fpm-metrics-adapter"
+    tags:
+      - "apiserver-v{{ .Version }}"
+      - "apiserver-latest"
+  - id: skpr-fpm-metrics-adapter-sidecar
+    dockerfile: dockerfiles/sidecar/Dockerfile
+    ids:
+      - skpr-fpm-metrics-adapter-sidecar
+    images:
+      - "ghcr.io/skpr/fpm-metrics-adapter"
+    tags:
+      - "sidecar-v{{ .Version }}"
+      - "sidecar-latest"
 
 changelog:
   use: github-native
