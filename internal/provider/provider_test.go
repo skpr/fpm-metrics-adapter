@@ -7,10 +7,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/skpr/fpm-metrics-adapter/internal/fpm"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+
+	"github.com/skpr/fpm-metrics-adapter/internal/fpm"
 )
 
 func getClientset() *fake.Clientset {

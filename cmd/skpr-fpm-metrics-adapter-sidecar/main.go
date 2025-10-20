@@ -3,10 +3,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/christgf/env"
-	"github.com/spf13/cobra"
 	"log/slog"
 	"os"
+
+	"github.com/christgf/env"
+	"github.com/spf13/cobra"
 
 	"github.com/skpr/fpm-metrics-adapter/internal/sidecar"
 )

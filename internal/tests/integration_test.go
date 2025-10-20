@@ -4,13 +4,14 @@ package tests
 
 import (
 	"fmt"
-	"github.com/skpr/fpm-metrics-adapter/internal/fpm"
 	"net/http"
 	"testing"
 
 	"github.com/christgf/env"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
+
+	"github.com/skpr/fpm-metrics-adapter/internal/fpm"
 )
 
 type ExpectedMetricsResponse struct {

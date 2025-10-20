@@ -3,11 +3,13 @@ package sidecar
 
 import (
 	"context"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/skpr/fpm-metrics-adapter/internal/fpm"
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/skpr/fpm-metrics-adapter/internal/fpm"
 )
 
 // Server for collecting and returning
