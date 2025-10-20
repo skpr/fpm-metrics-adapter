@@ -115,6 +115,7 @@ phpfpm_idle_processes 101
 		t.Fatalf("metrics scrape did not return 101. got %d", resp)
 	}
 
+	// Make sure we're handling unknown.
 	_, err = getMetric(endpoint, "phpfpm_unknown_metric")
 	if err == nil {
 		t.Fatalf("expected an error: %v", err)
