@@ -6,7 +6,7 @@ builds:
     main: cmd/skpr-fpm-metrics-adapter/main.go
     binary: skpr-fpm-metrics-adapter
     ldflags:
-      - -extldflags '-static'
+      - -extldflags '-static' -s -w
     env:
       - CGO_ENABLED=0
     goos: [ linux ]
@@ -15,7 +15,7 @@ builds:
     main: cmd/skpr-fpm-metrics-adapter-sidecar/main.go
     binary: skpr-fpm-metrics-adapter-sidecar
     ldflags:
-      - -extldflags '-static'
+      - -extldflags '-static' -s -w
     env:
       - CGO_ENABLED=0
     goos: [ linux ]
