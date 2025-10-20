@@ -108,7 +108,7 @@ func TestGetMetric(t *testing.T) {
 	}))
 
 	endpoint := fmt.Sprintf("%s/metrics", mockServer.URL)
-	resp, err := getMetric(endpoint, MetricIdleProcesses)
+	resp, err := getMetric(endpoint, fpm.MetricIdleProcesses)
 
 	if err != nil {
 		t.Fatalf("unable to scrape metrics: %v", err)

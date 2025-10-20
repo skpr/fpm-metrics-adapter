@@ -3,25 +3,21 @@ package sidecar
 
 import (
 	"context"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/skpr/fpm-metrics-adapter/internal/fpm"
 	"log/slog"
 	"net/http"
 	"time"
-
-	"golang.org/x/sync/errgroup"
-
-	"github.com/skpr/fpm-metrics-adapter/internal/fpm"
 )
 
 // Server for collecting and returning
 type Server struct {
 	// Used for logging events.
 	logger *slog.Logger
-	// The most recently collected FPM status.
-	status fpm.Status
 	// Configuration used by the HTTP server.
 	config ServerConfig
-	// Configuration used by the status logger.
-	statusLogger LogStatus
+	// LastUpdate timestamp
+	lastUpdate time.Time
 }
 
 // ServerConfig which is used by the HTTP server.
@@ -32,24 +28,40 @@ type ServerConfig struct {
 	Path string
 	// Endpoint for querying the latest FPM status information.
 	Endpoint string
-	// EndpointPoll frequency for collecting FPM status information.
-	EndpointPoll time.Duration
 }
 
-// LogStatus is used to configure the status logger.
-type LogStatus struct {
-	// If the status logger is enabled.
-	Enabled bool
-	// How frequency to log the status.
-	Frequency time.Duration
-}
+var (
+	listenQueue = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: fpm.MetricListenQueue,
+		Help: "The number of items in the listen queue.",
+	})
+	listenQueueLen = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: fpm.MetricListenQueueLen,
+		Help: "The total size of the listen queue.",
+	})
+	idleProcesses = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: fpm.MetricIdleProcesses,
+		Help: "The number of idle fpm processes.",
+	})
+	activeProcesses = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: fpm.MetricActiveProcesses,
+		Help: "The number of active fpm processes.",
+	})
+	totalProcesses = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: fpm.MetricTotalProcesses,
+		Help: "The total number of processes available in fpm.",
+	})
+	maxActiveProcesses = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: fpm.MetricMaxActiveProcesses,
+		Help: "The maximum number of active processes since the FPM master process was started.",
+	})
+)
 
 // NewServer for collecting and responding with the latest FPM status.
-func NewServer(logger *slog.Logger, config ServerConfig, statusLogger LogStatus) (*Server, error) {
+func NewServer(logger *slog.Logger, config ServerConfig) (*Server, error) {
 	server := &Server{
-		logger:       logger,
-		config:       config,
-		statusLogger: statusLogger,
+		logger: logger,
+		config: config,
 	}
 
 	return server, nil
@@ -57,62 +69,20 @@ func NewServer(logger *slog.Logger, config ServerConfig, statusLogger LogStatus)
 
 // Run the HTTP server.
 func (s *Server) Run(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
+	prometheus.MustRegister(listenQueue)
+	prometheus.MustRegister(listenQueueLen)
+	prometheus.MustRegister(idleProcesses)
+	prometheus.MustRegister(activeProcesses)
+	prometheus.MustRegister(totalProcesses)
+	prometheus.MustRegister(maxActiveProcesses)
 
-	group, ctx := errgroup.WithContext(ctx)
+	s.logger.Info("Starting server")
 
-	router := http.NewServeMux()
-
-	router.HandleFunc(s.config.Path, s.handler)
-
-	srv := &http.Server{
-		Addr:    s.config.Port,
-		Handler: router,
+	http.Handle(s.config.Path, s.Handler())
+	err := http.ListenAndServe(s.config.Port, nil)
+	if err != nil {
+		return err
 	}
 
-	// Run the HTTP server.
-	group.Go(func() error {
-		// We want to shutdown all other tasks if this logger exits.
-		defer cancel()
-
-		s.logger.Info("Starting server")
-
-		err := srv.ListenAndServe()
-		if err != nil && err != http.ErrServerClosed {
-			return err
-		}
-
-		return nil
-	})
-
-	// Run the HTTP server.
-	group.Go(func() error {
-		<-ctx.Done()
-		s.logger.Info("Shutting down server")
-		return srv.Shutdown(ctx)
-	})
-
-	// Query FPM periodically for statistics.
-	group.Go(func() error {
-		// We want to shutdown all other tasks if this logger exits.
-		defer cancel()
-
-		s.logger.Info("Starting refresher")
-		return s.refreshStatus(ctx)
-	})
-
-	// Logger for emmit metrics as a log event for external systems.
-	group.Go(func() error {
-		if !s.statusLogger.Enabled {
-			return nil
-		}
-
-		// We want to shutdown all other tasks if this logger exits.
-		defer cancel()
-
-		s.logger.Info("Starting logger")
-		return s.logStatus(ctx)
-	})
-
-	return group.Wait()
+	return nil
 }

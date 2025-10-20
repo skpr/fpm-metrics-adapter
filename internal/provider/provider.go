@@ -29,19 +29,6 @@ import (
 )
 
 const (
-	// MetricListenQueue provides the number of requests (backlog) currently waiting for a free process.
-	MetricListenQueue = "phpfpm_listen_queue"
-	// MetricListenQueueLen provides the maximum allowed size of the listen queue.
-	MetricListenQueueLen = "phpfpm_listen_queue_len"
-	// MetricIdleProcesses provides the number of processes that are currently idle (waiting for requests).
-	MetricIdleProcesses = "phpfpm_idle_processes"
-	// MetricActiveProcesses provides the number of processes that are currently processing requests.
-	MetricActiveProcesses = "phpfpm_active_processes"
-	// MetricTotalProcesses provides the current total number of processes.
-	MetricTotalProcesses = "phpfpm_total_processes"
-	// MetricMaxActiveProcesses provides the maximum number of concurrently active processes.
-	MetricMaxActiveProcesses = "phpfpm_max_active_processes"
-
 	// AnnotationProtocol is used for configuration which protocol is used for querying metrics.
 	AnnotationProtocol = "fpm.skpr.io/protocol"
 	// AnnotationPort is used for configuration which port is used for querying metrics.
@@ -160,32 +147,32 @@ func (p *Provider) ListAllMetrics() []provider.CustomMetricInfo {
 	return []provider.CustomMetricInfo{
 		{
 			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
-			Metric:        MetricListenQueue,
+			Metric:        fpm.MetricListenQueue,
 			Namespaced:    true,
 		},
 		{
 			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
-			Metric:        MetricListenQueueLen,
+			Metric:        fpm.MetricListenQueueLen,
 			Namespaced:    true,
 		},
 		{
 			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
-			Metric:        MetricIdleProcesses,
+			Metric:        fpm.MetricIdleProcesses,
 			Namespaced:    true,
 		},
 		{
 			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
-			Metric:        MetricActiveProcesses,
+			Metric:        fpm.MetricActiveProcesses,
 			Namespaced:    true,
 		},
 		{
 			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
-			Metric:        MetricTotalProcesses,
+			Metric:        fpm.MetricTotalProcesses,
 			Namespaced:    true,
 		},
 		{
 			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
-			Metric:        MetricMaxActiveProcesses,
+			Metric:        fpm.MetricMaxActiveProcesses,
 			Namespaced:    true,
 		},
 	}
@@ -229,17 +216,17 @@ func getMetric(endpoint string, metric string) (int64, error) {
 	}
 
 	switch metric {
-	case MetricListenQueue:
+	case fpm.MetricListenQueue:
 		return status.ListenQueue, nil
-	case MetricListenQueueLen:
+	case fpm.MetricListenQueueLen:
 		return status.ListenQueueLen, nil
-	case MetricIdleProcesses:
+	case fpm.MetricIdleProcesses:
 		return status.IdleProcesses, nil
-	case MetricActiveProcesses:
+	case fpm.MetricActiveProcesses:
 		return status.ActiveProcesses, nil
-	case MetricTotalProcesses:
+	case fpm.MetricTotalProcesses:
 		return status.TotalProcesses, nil
-	case MetricMaxActiveProcesses:
+	case fpm.MetricMaxActiveProcesses:
 		return status.MaxActiveProcesses, nil
 	}
 
