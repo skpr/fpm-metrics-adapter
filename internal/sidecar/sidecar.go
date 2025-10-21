@@ -3,6 +3,8 @@ package sidecar
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -85,12 +87,26 @@ func NewServer(logger *slog.Logger, config ServerConfig) (*Server, error) {
 func (s *Server) Run(ctx context.Context) error {
 	s.logger.Info("Registering metrics")
 
-	prometheus.MustRegister(s.metrics.ListenQueue)
-	prometheus.MustRegister(s.metrics.ListenQueueLen)
-	prometheus.MustRegister(s.metrics.IdleProcesses)
-	prometheus.MustRegister(s.metrics.ActiveProcesses)
-	prometheus.MustRegister(s.metrics.TotalProcesses)
-	prometheus.MustRegister(s.metrics.MaxActiveProcesses)
+	var errs []error
+
+	metrics := []prometheus.Collector{
+		s.metrics.ListenQueue,
+		s.metrics.ListenQueueLen,
+		s.metrics.IdleProcesses,
+		s.metrics.ActiveProcesses,
+		s.metrics.TotalProcesses,
+		s.metrics.MaxActiveProcesses,
+	}
+
+	for _, metric := range metrics {
+		if err := prometheus.Register(metric); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to register metrics: %w", errors.Join(errs...))
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle(s.config.Path, s.RefreshMetricsMiddleware(promhttp.Handler()))
