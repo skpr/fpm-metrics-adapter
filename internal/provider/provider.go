@@ -219,8 +219,18 @@ func getMetric(endpoint string, metric string) (int64, error) {
 	if !ok {
 		return 0, errors.New("not found")
 	}
-	value := m.GetMetric()[0].GetGauge().GetValue()
-	return int64(value), nil
+
+	value := m.GetMetric()
+
+	if len(value) == 0 {
+		return 0, errors.New("no metrics found")
+	}
+
+	if value[0].GetGauge() == nil {
+		return 0, errors.New("metric is not a gauge")
+	}
+
+	return int64(value[0].GetGauge().GetValue()), nil
 }
 
 // Helper function to get connection details from a Pod.
