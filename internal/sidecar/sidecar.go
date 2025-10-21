@@ -3,11 +3,14 @@ package sidecar
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 
-	"golang.org/x/sync/errgroup"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/skpr/fpm-metrics-adapter/internal/fpm"
 )
@@ -16,12 +19,10 @@ import (
 type Server struct {
 	// Used for logging events.
 	logger *slog.Logger
-	// The most recently collected FPM status.
-	status fpm.Status
 	// Configuration used by the HTTP server.
 	config ServerConfig
-	// Configuration used by the status logger.
-	statusLogger LogStatus
+	// Metrics for the server
+	metrics Metrics
 }
 
 // ServerConfig which is used by the HTTP server.
@@ -32,24 +33,51 @@ type ServerConfig struct {
 	Path string
 	// Endpoint for querying the latest FPM status information.
 	Endpoint string
-	// EndpointPoll frequency for collecting FPM status information.
-	EndpointPoll time.Duration
 }
 
-// LogStatus is used to configure the status logger.
-type LogStatus struct {
-	// If the status logger is enabled.
-	Enabled bool
-	// How frequency to log the status.
-	Frequency time.Duration
+type Metrics struct {
+	// The last time the FPM status was updated.
+	LastUpdate time.Time
+	// Prometheus metrics.
+	ListenQueue        prometheus.Gauge
+	ListenQueueLen     prometheus.Gauge
+	IdleProcesses      prometheus.Gauge
+	ActiveProcesses    prometheus.Gauge
+	TotalProcesses     prometheus.Gauge
+	MaxActiveProcesses prometheus.Gauge
 }
 
 // NewServer for collecting and responding with the latest FPM status.
-func NewServer(logger *slog.Logger, config ServerConfig, statusLogger LogStatus) (*Server, error) {
+func NewServer(logger *slog.Logger, config ServerConfig) (*Server, error) {
 	server := &Server{
-		logger:       logger,
-		config:       config,
-		statusLogger: statusLogger,
+		logger: logger,
+		config: config,
+		metrics: Metrics{
+			ListenQueue: prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: fpm.MetricListenQueue,
+				Help: "The number of items in the listen queue.",
+			}),
+			ListenQueueLen: prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: fpm.MetricListenQueueLen,
+				Help: "The total size of the listen queue.",
+			}),
+			IdleProcesses: prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: fpm.MetricIdleProcesses,
+				Help: "The number of idle fpm processes.",
+			}),
+			ActiveProcesses: prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: fpm.MetricActiveProcesses,
+				Help: "The number of active fpm processes.",
+			}),
+			TotalProcesses: prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: fpm.MetricTotalProcesses,
+				Help: "The total number of processes available in fpm.",
+			}),
+			MaxActiveProcesses: prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: fpm.MetricMaxActiveProcesses,
+				Help: "The maximum number of active processes since the FPM master process was started.",
+			}),
+		},
 	}
 
 	return server, nil
@@ -57,62 +85,33 @@ func NewServer(logger *slog.Logger, config ServerConfig, statusLogger LogStatus)
 
 // Run the HTTP server.
 func (s *Server) Run(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
+	s.logger.Info("Registering metrics")
 
-	group, ctx := errgroup.WithContext(ctx)
+	var errs []error
 
-	router := http.NewServeMux()
-
-	router.HandleFunc(s.config.Path, s.handler)
-
-	srv := &http.Server{
-		Addr:    s.config.Port,
-		Handler: router,
+	metrics := []prometheus.Collector{
+		s.metrics.ListenQueue,
+		s.metrics.ListenQueueLen,
+		s.metrics.IdleProcesses,
+		s.metrics.ActiveProcesses,
+		s.metrics.TotalProcesses,
+		s.metrics.MaxActiveProcesses,
 	}
 
-	// Run the HTTP server.
-	group.Go(func() error {
-		// We want to shutdown all other tasks if this logger exits.
-		defer cancel()
-
-		s.logger.Info("Starting server")
-
-		err := srv.ListenAndServe()
-		if err != nil && err != http.ErrServerClosed {
-			return err
+	for _, metric := range metrics {
+		if err := prometheus.Register(metric); err != nil {
+			errs = append(errs, err)
 		}
+	}
 
-		return nil
-	})
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to register metrics: %w", errors.Join(errs...))
+	}
 
-	// Run the HTTP server.
-	group.Go(func() error {
-		<-ctx.Done()
-		s.logger.Info("Shutting down server")
-		return srv.Shutdown(ctx)
-	})
+	mux := http.NewServeMux()
+	mux.Handle(s.config.Path, s.RefreshMetricsMiddleware(promhttp.Handler()))
 
-	// Query FPM periodically for statistics.
-	group.Go(func() error {
-		// We want to shutdown all other tasks if this logger exits.
-		defer cancel()
+	s.logger.Info("Starting server")
 
-		s.logger.Info("Starting refresher")
-		return s.refreshStatus(ctx)
-	})
-
-	// Logger for emmit metrics as a log event for external systems.
-	group.Go(func() error {
-		if !s.statusLogger.Enabled {
-			return nil
-		}
-
-		// We want to shutdown all other tasks if this logger exits.
-		defer cancel()
-
-		s.logger.Info("Starting logger")
-		return s.logStatus(ctx)
-	})
-
-	return group.Wait()
+	return http.ListenAndServe(s.config.Port, mux)
 }

@@ -3,7 +3,6 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,6 +10,8 @@ import (
 	"time"
 
 	"github.com/patrickmn/go-cache"
+	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -29,19 +30,6 @@ import (
 )
 
 const (
-	// MetricListenQueue provides the number of requests (backlog) currently waiting for a free process.
-	MetricListenQueue = "phpfpm_listen_queue"
-	// MetricListenQueueLen provides the maximum allowed size of the listen queue.
-	MetricListenQueueLen = "phpfpm_listen_queue_len"
-	// MetricIdleProcesses provides the number of processes that are currently idle (waiting for requests).
-	MetricIdleProcesses = "phpfpm_idle_processes"
-	// MetricActiveProcesses provides the number of processes that are currently processing requests.
-	MetricActiveProcesses = "phpfpm_active_processes"
-	// MetricTotalProcesses provides the current total number of processes.
-	MetricTotalProcesses = "phpfpm_total_processes"
-	// MetricMaxActiveProcesses provides the maximum number of concurrently active processes.
-	MetricMaxActiveProcesses = "phpfpm_max_active_processes"
-
 	// AnnotationProtocol is used for configuration which protocol is used for querying metrics.
 	AnnotationProtocol = "fpm.skpr.io/protocol"
 	// AnnotationPort is used for configuration which port is used for querying metrics.
@@ -160,32 +148,32 @@ func (p *Provider) ListAllMetrics() []provider.CustomMetricInfo {
 	return []provider.CustomMetricInfo{
 		{
 			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
-			Metric:        MetricListenQueue,
+			Metric:        fpm.MetricListenQueue,
 			Namespaced:    true,
 		},
 		{
 			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
-			Metric:        MetricListenQueueLen,
+			Metric:        fpm.MetricListenQueueLen,
 			Namespaced:    true,
 		},
 		{
 			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
-			Metric:        MetricIdleProcesses,
+			Metric:        fpm.MetricIdleProcesses,
 			Namespaced:    true,
 		},
 		{
 			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
-			Metric:        MetricActiveProcesses,
+			Metric:        fpm.MetricActiveProcesses,
 			Namespaced:    true,
 		},
 		{
 			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
-			Metric:        MetricTotalProcesses,
+			Metric:        fpm.MetricTotalProcesses,
 			Namespaced:    true,
 		},
 		{
 			GroupResource: schema.GroupResource{Group: "", Resource: "pods"},
-			Metric:        MetricMaxActiveProcesses,
+			Metric:        fpm.MetricMaxActiveProcesses,
 			Namespaced:    true,
 		},
 	}
@@ -212,8 +200,6 @@ func scrape(ctx context.Context, clientset kubernetes.Interface, namespace, name
 }
 
 func getMetric(endpoint string, metric string) (int64, error) {
-	var status fpm.Status
-
 	resp, err := http.Get(endpoint)
 	if err != nil {
 		return 0, err
@@ -223,27 +209,28 @@ func getMetric(endpoint string, metric string) (int64, error) {
 		err = resp.Body.Close()
 	}()
 
-	err = json.NewDecoder(resp.Body).Decode(&status)
+	parser := expfmt.NewTextParser(model.UTF8Validation)
+	metrics, err := parser.TextToMetricFamilies(resp.Body)
 	if err != nil {
 		return 0, err
 	}
 
-	switch metric {
-	case MetricListenQueue:
-		return status.ListenQueue, nil
-	case MetricListenQueueLen:
-		return status.ListenQueueLen, nil
-	case MetricIdleProcesses:
-		return status.IdleProcesses, nil
-	case MetricActiveProcesses:
-		return status.ActiveProcesses, nil
-	case MetricTotalProcesses:
-		return status.TotalProcesses, nil
-	case MetricMaxActiveProcesses:
-		return status.MaxActiveProcesses, nil
+	m, ok := metrics[metric]
+	if !ok {
+		return 0, errors.New("not found")
 	}
 
-	return 0, errors.New("not found")
+	value := m.GetMetric()
+
+	if len(value) == 0 {
+		return 0, errors.New("no metrics found")
+	}
+
+	if value[0].GetGauge() == nil {
+		return 0, errors.New("metric is not a gauge")
+	}
+
+	return int64(value[0].GetGauge().GetValue()), nil
 }
 
 // Helper function to get connection details from a Pod.
