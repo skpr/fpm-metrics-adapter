@@ -1,5 +1,6 @@
 apiserver.local.config
-.kube
+/.kube
+/.idea
 /bin
 /vendor
 /dist
