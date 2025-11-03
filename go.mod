@@ -6,7 +6,7 @@ require (
 	github.com/christgf/env v0.0.0-20230511114549-ccdc1a7b5961
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prometheus/client_golang v1.23.2
-	github.com/prometheus/common v0.67.1
+	github.com/prometheus/common v0.67.2
 	github.com/spf13/cobra v1.10.1
 	github.com/tomasen/fcgi_client v0.0.0-20180423082037-2bb3d819fd19
 	k8s.io/api v0.34.1
