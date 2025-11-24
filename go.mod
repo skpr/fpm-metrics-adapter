@@ -6,14 +6,14 @@ require (
 	github.com/christgf/env v0.0.0-20230511114549-ccdc1a7b5961
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prometheus/client_golang v1.23.2
-	github.com/prometheus/common v0.67.1
+	github.com/prometheus/common v0.67.4
 	github.com/spf13/cobra v1.10.1
 	github.com/tomasen/fcgi_client v0.0.0-20180423082037-2bb3d819fd19
-	k8s.io/api v0.34.1
-	k8s.io/apimachinery v0.34.1
-	k8s.io/client-go v0.34.1
-	k8s.io/component-base v0.34.1
-	k8s.io/metrics v0.34.1
+	k8s.io/api v0.34.2
+	k8s.io/apimachinery v0.34.2
+	k8s.io/client-go v0.34.2
+	k8s.io/component-base v0.34.2
+	k8s.io/metrics v0.34.2
 	sigs.k8s.io/custom-metrics-apiserver v1.33.0
 )
 
@@ -49,7 +49,6 @@ require (
 	github.com/go-openapi/swag/typeutils v0.25.1 // indirect
 	github.com/go-openapi/swag/yamlutils v0.25.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/cel-go v0.26.1 // indirect
