@@ -15,7 +15,7 @@ func QueryStatus(address string) (Status, error) {
 	env := map[string]string{
 		"SCRIPT_FILENAME": "/status",
 		"SCRIPT_NAME":     "/status",
-		"QUERY_STRING":    "json&full",
+		"QUERY_STRING":    "json",
 	}
 
 	fcgi, err := fcgiclient.Dial("tcp", address)
