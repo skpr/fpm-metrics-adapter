@@ -4,12 +4,16 @@ package fpm
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	fcgiclient "github.com/tomasen/fcgi_client"
 )
 
-func NewFpmTcpClient(address string) *FpmTcpClient {
-	return &FpmTcpClient{Address: address}
+func NewFpmTcpClient(address string, timeout time.Duration) *FpmTcpClient {
+	return &FpmTcpClient{
+		Address: address,
+		Timeout: timeout,
+	}
 }
 
 // QueryStatus of the FPM worker pool.
@@ -22,7 +26,7 @@ func (client *FpmTcpClient) QueryStatus() (Status, error) {
 		"QUERY_STRING":    "json",
 	}
 
-	fcgi, err := fcgiclient.Dial("tcp", client.Address)
+	fcgi, err := fcgiclient.DialTimeout("tcp", client.Address, client.Timeout)
 	if err != nil {
 		return status, err
 	}

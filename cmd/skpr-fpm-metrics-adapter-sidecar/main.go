@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/christgf/env"
 	"github.com/spf13/cobra"
@@ -61,7 +62,7 @@ func main() {
 
 			logger.Info("Booting sidecar")
 
-			client := fpm.NewFpmTcpClient(o.ServerConfig.Endpoint)
+			client := fpm.NewFpmTcpClient(o.ServerConfig.Endpoint, o.ServerConfig.Timeout)
 
 			server, err := sidecar.NewServer(logger, o.ServerConfig, client)
 			if err != nil {
@@ -83,6 +84,7 @@ func main() {
 	cmd.PersistentFlags().StringVar(&o.ServerConfig.Port, "port", env.String("SKPR_FPM_METRICS_ADAPTER_PORT", ":80"), "Port which our metrics endpoint will be served on")
 	cmd.PersistentFlags().StringVar(&o.ServerConfig.Path, "path", env.String("SKPR_FPM_METRICS_ADAPTER_PATH", "/metrics"), "Path which our metrics endpoint will be served on")
 	cmd.PersistentFlags().StringVar(&o.ServerConfig.Endpoint, "endpoint", env.String("SKPR_FPM_METRICS_ADAPTER_ENDPOINT", "127.0.0.1:9000"), "Endpoint which we will poll for FPM status information")
+	cmd.PersistentFlags().DurationVar(&o.ServerConfig.Timeout, "timeout", env.Duration("SKPR_FPM_METRICS_ADAPTER_QUERY_STATUS_TIMEOUT", 5*time.Second), "Set the query status timeout")
 
 	err := cmd.Execute()
 	if err != nil {

@@ -35,6 +35,8 @@ type ServerConfig struct {
 	Path string
 	// Endpoint for querying the latest FPM status information.
 	Endpoint string
+	// Timeout for the FPM status query.
+	Timeout time.Duration
 }
 
 type Metrics struct {

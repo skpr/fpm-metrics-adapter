@@ -1,5 +1,7 @@
 package fpm
 
+import "time"
+
 type FcmClient interface {
 	QueryStatus() (Status, error)
 }
@@ -7,6 +9,7 @@ type FcmClient interface {
 // FpmTcpClient provides a TCP connection to the FPM status endpoint.
 type FpmTcpClient struct {
 	Address string
+	Timeout time.Duration
 }
 
 // QueryResponse provided by the FPM status request with query string "json&full".
