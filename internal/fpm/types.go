@@ -1,5 +1,14 @@
 package fpm
 
+type FcmClient interface {
+	QueryStatus() (Status, error)
+}
+
+// FpmTcpClient provides a TCP connection to the FPM status endpoint.
+type FpmTcpClient struct {
+	Address string
+}
+
 // QueryResponse provided by the FPM status request with query string "json&full".
 // This is a temporay struct and is marshalled into our Status struct.
 // https://www.php.net/manual/en/fpm.status.php

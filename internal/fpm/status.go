@@ -8,8 +8,12 @@ import (
 	fcgiclient "github.com/tomasen/fcgi_client"
 )
 
+func NewFpmTcpClient(address string) *FpmTcpClient {
+	return &FpmTcpClient{Address: address}
+}
+
 // QueryStatus of the FPM worker pool.
-func QueryStatus(address string) (Status, error) {
+func (client *FpmTcpClient) QueryStatus() (Status, error) {
 	var status Status
 
 	env := map[string]string{
@@ -18,7 +22,7 @@ func QueryStatus(address string) (Status, error) {
 		"QUERY_STRING":    "json",
 	}
 
-	fcgi, err := fcgiclient.Dial("tcp", address)
+	fcgi, err := fcgiclient.Dial("tcp", client.Address)
 	if err != nil {
 		return status, err
 	}

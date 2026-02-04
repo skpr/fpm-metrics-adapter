@@ -9,6 +9,7 @@ import (
 	"github.com/christgf/env"
 	"github.com/spf13/cobra"
 
+	"github.com/skpr/fpm-metrics-adapter/internal/fpm"
 	"github.com/skpr/fpm-metrics-adapter/internal/sidecar"
 )
 
@@ -60,7 +61,9 @@ func main() {
 
 			logger.Info("Booting sidecar")
 
-			server, err := sidecar.NewServer(logger, o.ServerConfig)
+			client := fpm.NewFpmTcpClient(o.ServerConfig.Endpoint)
+
+			server, err := sidecar.NewServer(logger, o.ServerConfig, client)
 			if err != nil {
 				return fmt.Errorf("failed to start server: %w", err)
 			}

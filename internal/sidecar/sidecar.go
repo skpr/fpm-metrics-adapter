@@ -23,6 +23,8 @@ type Server struct {
 	config ServerConfig
 	// Metrics for the server
 	metrics Metrics
+	// FpmClient for querying the FPM status.
+	client fpm.FcmClient
 }
 
 // ServerConfig which is used by the HTTP server.
@@ -48,7 +50,7 @@ type Metrics struct {
 }
 
 // NewServer for collecting and responding with the latest FPM status.
-func NewServer(logger *slog.Logger, config ServerConfig) (*Server, error) {
+func NewServer(logger *slog.Logger, config ServerConfig, client fpm.FcmClient) (*Server, error) {
 	server := &Server{
 		logger: logger,
 		config: config,
@@ -78,6 +80,7 @@ func NewServer(logger *slog.Logger, config ServerConfig) (*Server, error) {
 				Help: "The maximum number of active processes since the FPM master process was started.",
 			}),
 		},
+		client: client,
 	}
 
 	return server, nil
