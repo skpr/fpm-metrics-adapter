@@ -3,8 +3,6 @@ package sidecar
 import (
 	"net/http"
 	"time"
-
-	"github.com/skpr/fpm-metrics-adapter/internal/fpm"
 )
 
 // Handler wraps promhttp.Handler to fetch data.
@@ -16,9 +14,10 @@ func (s *Server) RefreshMetricsMiddleware(next http.Handler) http.Handler {
 
 			s.metrics.LastUpdate = time.Now()
 
-			status, err := fpm.QueryStatus(s.config.Endpoint)
+			status, err := s.client.QueryStatus()
 			if err != nil {
 				s.logger.Error("failed to collect FPM status", "error", err.Error())
+				return
 			}
 
 			s.metrics.ListenQueue.Set(float64(status.ListenQueue))
