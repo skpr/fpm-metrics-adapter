@@ -103,8 +103,9 @@ func (s *Server) Run(ctx context.Context) error {
 		s.metrics.MaxActiveProcesses,
 	}
 
+	customRegistry := prometheus.NewRegistry()
 	for _, metric := range metrics {
-		if err := prometheus.Register(metric); err != nil {
+		if err := customRegistry.Register(metric); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -114,7 +115,10 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle(s.config.Path, s.RefreshMetricsMiddleware(promhttp.Handler()))
+	mux.Handle(s.config.Path, s.RefreshMetricsMiddleware(promhttp.HandlerFor(
+		customRegistry,
+		promhttp.HandlerOpts{},
+	)))
 
 	s.logger.Info("Starting server")
 
