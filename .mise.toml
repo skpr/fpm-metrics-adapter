@@ -1,7 +1,7 @@
 [tools]
-go = "1.25"
-"ubi:golangci/golangci-lint" = "latest"
-"ubi:goreleaser/goreleaser" = "latest"
+go = "1.26"
+"ubi:golangci/golangci-lint" = "2.11"
+"ubi:goreleaser/goreleaser" = "2.14"
 
 [env]
 CGO_ENABLED=0
