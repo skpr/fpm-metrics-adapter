@@ -8,7 +8,7 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/common v0.70.1
 	github.com/spf13/cobra v1.10.2
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.12.0
 	github.com/tomasen/fcgi_client v0.0.0-20180423082037-2bb3d819fd19
 	k8s.io/api v0.36.3
 	k8s.io/apimachinery v0.36.3
